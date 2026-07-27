@@ -32,7 +32,7 @@ ESPN_SEASON    = 2026
 ESPN_S2        = None            # public league -> None
 ESPN_SWID      = None            # public league -> None
 ESPN_JSON_FILE = None            # optional: path to saved league JSON (offline/testing)
-ESPN_URL_OVERRIDE = "https://espn-relay.baseball-gm.workers.dev/"           # if ESPN blocks GitHub, paste your Cloudflare relay URL here
+ESPN_URL_OVERRIDE = ""           # if ESPN blocks GitHub, paste your Cloudflare relay URL here
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
@@ -110,11 +110,27 @@ def classify(acq, sp, owner):
     if sp: return "kept" if sp["kept"] else "auction"
     return "fa"
 
+def roster_rank(e, idx):
+    """ESPN roster display order: active batters C->UT, bench/IL batters,
+       active pitchers P/SP/RP, bench/IL pitchers."""
+    BAT = {0:0, 1:1, 2:2, 3:3, 4:4, 6:5, 7:6, 5:7, 8:7, 9:7, 10:7, 11:8, 12:8}
+    PIT = {13:0, 14:1, 15:2}
+    s = e.get("slot_id")
+    if s in (13, 14, 15):
+        return (2, PIT.get(s, 9), idx)
+    if s in (16, 17):
+        sub = 0 if s == 16 else 1          # bench before IL
+        return ((3 if e.get("is_pitcher") else 1), sub, idx)
+    return (0, BAT.get(s, 9), idx)          # active batter
+
 def build_from_espn(rosters, index, OWNER_TEAM):
     from espn_live import key as ekey, fuzzy
     keys = list(index.keys())
+    # order every roster spot the way ESPN displays it, within each team
+    ordered = sorted(enumerate(rosters),
+                     key=lambda t: ((t[1]["team"] or t[1]["owner"] or ""), roster_rank(t[1], t[0])))
     records, teams, matched = [], {}, 0
-    for e in rosters:
+    for _, e in ordered:
         owner, name, acq = e["owner"], e["player"], e["acq"]
         k = ekey(name); sp = index.get(k)
         if sp is None:
@@ -122,13 +138,14 @@ def build_from_espn(rosters, index, OWNER_TEAM):
             if nk: sp = index.get(nk)
         if sp: matched += 1
         tag = classify(acq, sp, owner)
-        team = OWNER_TEAM.get(owner, e["team"] or owner)
+        team = e["team"] or OWNER_TEAM.get(owner, owner)     # ESPN's current team name wins
         p = {**{y: (sp["p"][y] if sp else None) for y in (2022,2023,2024,2025)},
              2026: (sp["p"][2026] if sp else None)}
         rec = {"team": team, "owner": owner,
                "player": (sp["player"] if sp else name),
                "mlb": (sp["mlb"] if sp else (e["mlb"] or "FA")),
-               "pos": (sp["pos"] if sp else e["pos"]),
+               "pos": (e["pos"] or (sp["pos"] if sp else "")),  # ESPN's current roster slot
+               "elig": e.get("elig", ""),
                "kept": tag == "kept", "tag": tag, "p": p}
         records.append(rec)
         t = teams.setdefault(team, {"team": team, "owner": owner, "count": 0, "kept": 0, "total2026": 0})
