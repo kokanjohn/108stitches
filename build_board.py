@@ -32,6 +32,7 @@ ESPN_SEASON    = 2026
 ESPN_S2        = None            # public league -> None
 ESPN_SWID      = None            # public league -> None
 ESPN_JSON_FILE = None            # optional: path to saved league JSON (offline/testing)
+ESPN_URL_OVERRIDE = ""           # if ESPN blocks GitHub, paste your Cloudflare relay URL here
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
@@ -154,7 +155,8 @@ def build():
         try:
             from espn_live import fetch_league, current_rosters
             raw = Path(ESPN_JSON_FILE).read_text(encoding="utf-8") if ESPN_JSON_FILE else None
-            league = fetch_league(ESPN_LEAGUE_ID, ESPN_SEASON, ESPN_S2, ESPN_SWID, local_json=raw)
+            league = fetch_league(ESPN_LEAGUE_ID, ESPN_SEASON, ESPN_S2, ESPN_SWID,
+                                  local_json=raw, url=(ESPN_URL_OVERRIDE or None))
             rosters = current_rosters(league, OWNER_ALIAS)
             records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM)
             live = True
