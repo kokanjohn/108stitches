@@ -23,11 +23,12 @@ def key(s):
     s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii","ignore").decode().lower()
     return re.sub(r"[^a-z0-9]", "", s)
 
-def fetch_league(league_id, season, espn_s2=None, swid=None, timeout=25, local_json=None):
+def fetch_league(league_id, season, espn_s2=None, swid=None, timeout=25, local_json=None, url=None):
     if local_json is not None:
         return json.loads(local_json) if isinstance(local_json, str) else local_json
-    url = (f"{HOST}/apis/v3/games/flb/seasons/{season}/segments/0/leagues/{league_id}"
-           f"?view=mTeam&view=mRoster")
+    if not url:
+        url = (f"{HOST}/apis/v3/games/flb/seasons/{season}/segments/0/leagues/{league_id}"
+               f"?view=mTeam&view=mRoster")
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
