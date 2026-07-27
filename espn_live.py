@@ -19,6 +19,30 @@ PRO_TEAM = {0:"FA",1:"BAL",2:"BOS",3:"LAA",4:"CHW",5:"CLE",6:"DET",7:"KC",8:"MIL
 SLOT = {0:"C",1:"1B",2:"2B",3:"3B",4:"SS",5:"OF",6:"MI",7:"CI",11:"DH",12:"UT",
  13:"P",14:"SP",15:"RP",16:"BE",17:"IL"}
 
+# real positions to show after a player's name, from eligibleSlots
+POS_ABBR = {0:"C",1:"1B",2:"2B",3:"3B",4:"SS",5:"OF",8:"OF",9:"OF",10:"OF",11:"DH",
+ 13:"P",14:"SP",15:"RP"}
+BATTER_ELIG = {0,1,2,3,4,5,8,9,10,11}   # real batting positions (used to tell batter vs pitcher)
+
+def eligibility(eligible_ids):
+    """('DH, 1B' style string, is_pitcher) from ESPN eligibleSlots, preserving ESPN's order."""
+    ids = eligible_ids or []
+    is_bat = any(i in BATTER_ELIG for i in ids)
+    out = []
+    for i in ids:
+        a = POS_ABBR.get(i)
+        if not a:
+            continue
+        if is_bat and a in ("P", "SP", "RP"):     # batter: drop pitcher slots
+            continue
+        if not is_bat and a not in ("P", "SP", "RP"):
+            continue
+        if a not in out:
+            out.append(a)
+    if not is_bat and ("SP" in out or "RP" in out):   # pitchers: prefer SP/RP over generic P
+        out = [x for x in out if x != "P"]
+    return ", ".join(out), (not is_bat)
+
 def key(s):
     s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii","ignore").decode().lower()
     return re.sub(r"[^a-z0-9]", "", s)
@@ -61,12 +85,15 @@ def current_rosters(league, owner_alias=None):
             name = pl.get("fullName") or ""
             if not name:
                 continue
+            elig, is_pitcher = eligibility(pl.get("eligibleSlots"))
             out.append({
                 "owner": person, "team": _team_name(t), "player": name,
                 "player_id": pl.get("id"),
                 "acq": (e.get("acquisitionType") or "").upper(),
                 "mlb": PRO_TEAM.get(pl.get("proTeamId"), ""),
+                "slot_id": e.get("lineupSlotId"),
                 "pos": SLOT.get(e.get("lineupSlotId"), ""),
+                "elig": elig, "is_pitcher": is_pitcher,
             })
     return out
 
