@@ -32,7 +32,7 @@ ESPN_SEASON    = 2026
 ESPN_S2        = None            # public league -> None
 ESPN_SWID      = None            # public league -> None
 ESPN_JSON_FILE = None            # optional: path to saved league JSON (offline/testing)
-ESPN_URL_OVERRIDE = ""           # if ESPN blocks GitHub, paste your Cloudflare relay URL here
+ESPN_URL_OVERRIDE = "https://espn-relay.baseball-gm.workers.dev/"           # if ESPN blocks GitHub, paste your Cloudflare relay URL here
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
