@@ -31,9 +31,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Diagnose ESPN
-        run: python diagnose.py
         
       - name: Build the board (fetches current ESPN rosters)
         run: python build_board.py
