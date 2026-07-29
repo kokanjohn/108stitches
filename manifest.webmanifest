@@ -1,0 +1,16 @@
+{
+  "id": "108-stitches-keeper",
+  "name": "108 Stitches Keeper Board",
+  "short_name": "108 Stitches",
+  "description": "Keeper prices, rosters, and category standings for the 108 Stitches fantasy baseball league.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0F1113",
+  "theme_color": "#0F1113",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
