@@ -2,7 +2,7 @@ name: Build & publish keeper board
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "20 * * * *"
   workflow_dispatch:
   push:
     branches: [ main ]
