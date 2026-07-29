@@ -39,6 +39,9 @@ jobs:
         run: |
           mkdir -p _site
           cp "108-stitches-keeper-board.html" _site/index.html
+          cp manifest.webmanifest _site/
+          cp sw.js _site/
+          cp -r icons _site/icons
 
       - uses: actions/upload-pages-artifact@v3
         with:
