@@ -241,6 +241,28 @@
   .exp-menu button:hover{background:var(--chalk)}
   .exp-menu .sub{color:var(--mute);font-size:12px}
 
+  /* Live Auction Tool (desktop full-screen) */
+  #auctionView{position:fixed;inset:0;z-index:200;background:var(--paper);overflow:auto}
+  .auc-shell{max-width:1440px;margin:0 auto;padding:18px 22px 60px}
+  .auc-top{display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;
+    background:var(--paper);padding:10px 0 14px;border-bottom:1px solid var(--line);margin-bottom:20px;z-index:2}
+  .auc-top h2{font-family:"Oswald",sans-serif;font-size:26px;margin:0;letter-spacing:.01em}
+  .auc-sub{font-size:14px;color:var(--mute);font-weight:400;margin-left:10px}
+  .auc-actions{display:flex;gap:8px;flex:0 0 auto}
+  .auc-mobile{padding:60px 20px;text-align:center;color:var(--mute);font-size:15px;line-height:1.6}
+  .auc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .auc-team{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .auc-team h3{font-family:"Oswald",sans-serif;font-size:15px;margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .auc-team .own{font-size:11px;color:var(--mute);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .auc-team .row{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;color:var(--mute)}
+  .auc-team .row b{color:var(--ink);font-family:"Roboto Mono",monospace;font-weight:600}
+  .auc-team .big{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+  .auc-team .big .row{font-size:13.5px}
+  .auc-team .maxbid b{color:var(--stitch);font-size:16px}
+  .auc-team .neg b{color:var(--warn)}
+  .auc-status{margin-top:18px;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
+  @media (max-width:1160px){ .auc-grid{grid-template-columns:repeat(2,1fr)} }
+
   /* ---- salary strip ---- */
   .panel{margin:22px 0 8px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
   .panel > summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:baseline;gap:10px}
@@ -512,6 +534,21 @@
   <summary style="cursor:pointer;color:var(--mute);font-size:12px;letter-spacing:.04em">Auction data check (temporary)</summary>
   <pre id="auctionDiagOut" style="white-space:pre-wrap;word-break:break-word;font-size:11px;line-height:1.5;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;color:var(--ink);overflow:auto;margin-top:10px"></pre>
 </details>
+
+<div id="auctionView" hidden>
+  <div class="auc-shell">
+    <div class="auc-top">
+      <h2>Live Auction<span class="auc-sub">2027 · budget preview</span></h2>
+      <div class="auc-actions">
+        <button class="btn" id="aucRefresh">Refresh</button>
+        <button class="btn" id="aucClose">Close</button>
+      </div>
+    </div>
+    <div id="aucMobileMsg" class="auc-mobile" hidden>The Live Auction Tool is desktop-only — please open it on a larger screen.</div>
+    <div id="aucGrid" class="auc-grid"></div>
+    <div id="aucStatus" class="auc-status"></div>
+  </div>
+</div>
 
 <div class="modal" id="stdModal" role="dialog" aria-modal="true" aria-label="Category Standings" hidden>
   <div class="modal-sheet">
@@ -1008,8 +1045,83 @@ $('#bars').addEventListener('keydown',e=>{
   e.preventDefault(); jumpToTeam(b.dataset.team);
 });
 
-// Live Auction Tool — placeholder until the tool is built
-document.getElementById('auctionBtn').addEventListener('click',()=>flash('Live Auction Tool — coming soon'));
+// Live Auction Tool — Phase 2: budget engine + live 16-team preview
+(function(){
+  const DB="https://stitches-fd635-default-rtdb.firebaseio.com";
+  const WM_PATH="winterMeetings";
+  const AUCTION_PATH="auction2027";     // picks ledger (empty until Phase 3 bidding)
+  const BUDGET=290, ROSTER=26;
+  const view=document.getElementById('auctionView');
+  let teams=null;
+
+  async function loadTeams(){
+    if(teams) return teams;
+    try{ const r=await fetch('auction-players.json',{cache:'no-store'}); const j=await r.json(); teams=j.teams||[]; }
+    catch(e){ teams=[]; }
+    return teams;
+  }
+  const dbGet=async path=>{ try{ const r=await fetch(`${DB}/${path}.json`); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } };
+
+  function wmNetOf(wm){
+    const net={};
+    Object.values(wm||{}).forEach(e=>{
+      const amt=parseFloat(e.amount)||0;
+      if(e.seller) net[e.seller]=(net[e.seller]||0)+amt;
+      if(e.buyer)  net[e.buyer]=(net[e.buyer]||0)-amt;
+    });
+    return net;
+  }
+  function auctionOf(picks){
+    const spent={}, won={};
+    Object.values(picks||{}).forEach(p=>{
+      if(!p||!p.team) return;
+      spent[p.team]=(spent[p.team]||0)+(parseFloat(p.bid)||0);
+      won[p.team]=(won[p.team]||0)+1;
+    });
+    return {spent, won};
+  }
+  const money=v=> (v<0?"-$"+Math.abs(v):"$"+v);
+
+  function render(tks, net, auc){
+    document.getElementById('aucGrid').innerHTML=tks.map(t=>{
+      const wn=net[t.team]||0, spent=auc.spent[t.team]||0, won=auc.won[t.team]||0;
+      const remaining=BUDGET+wn-(t.keeperSalary2027||0)-spent;
+      const open=ROSTER-(t.keeperCount||0)-won;
+      const maxBid=open>0 ? remaining-(open-1) : 0;
+      return `<div class="auc-team">
+        <h3>${esc(t.team)}</h3><div class="own">${esc(t.owner||'')}</div>
+        <div class="row"><span>Keepers</span><b>${t.keeperCount||0} · $${t.keeperSalary2027||0}</b></div>
+        <div class="row"><span>WM net</span><b>${money(wn)}</b></div>
+        <div class="row"><span>Won</span><b>${won} · $${spent}</b></div>
+        <div class="big">
+          <div class="row${remaining<0?' neg':''}"><span>Remaining</span><b>${money(remaining)}</b></div>
+          <div class="row"><span>Open spots</span><b>${open}</b></div>
+          <div class="row maxbid${maxBid<0?' neg':''}"><span>Max bid</span><b>${open>0?money(maxBid):'—'}</b></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  async function refresh(){
+    const status=document.getElementById('aucStatus');
+    status.textContent='Loading…';
+    const [tks, wm, picks]=await Promise.all([loadTeams(), dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
+    if(!tks.length){ status.textContent='Could not load team data (auction-players.json). Run the build, then reopen.'; return; }
+    render(tks, wmNetOf(wm), auctionOf(picks));
+    status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${tks.length} teams · updated ${new Date().toLocaleTimeString()}`;
+  }
+  function openView(){
+    view.hidden=false; document.body.style.overflow='hidden';
+    const small=window.innerWidth<900;
+    document.getElementById('aucMobileMsg').hidden=!small;
+    document.getElementById('aucGrid').style.display=small?'none':'';
+    if(!small) refresh();
+  }
+  function closeView(){ view.hidden=true; document.body.style.overflow=''; }
+  document.getElementById('auctionBtn').addEventListener('click',openView);
+  document.getElementById('aucClose').addEventListener('click',closeView);
+  document.getElementById('aucRefresh').addEventListener('click',refresh);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!view.hidden) closeView(); });
+})();
 
 // temporary: surface the Phase-1 auction data sample
 const _adiag = DATA.auctionBakeCheck || DATA.auctionDiag;
