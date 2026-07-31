@@ -42,6 +42,7 @@ jobs:
           cp manifest.webmanifest _site/
           cp sw.js _site/
           cp -r icons _site/icons
+          cp auction-players.json _site/ 2>/dev/null || true
 
       - uses: actions/upload-pages-artifact@v3
         with:
