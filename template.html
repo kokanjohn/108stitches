@@ -265,7 +265,38 @@
   .ac-pos{color:var(--mute);font-size:9.5px;font-weight:700;letter-spacing:.03em}
   .ac-nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ac-sal{font-family:"Roboto Mono",monospace;color:var(--mute);font-size:11px}
-  .ac-p.bench{opacity:.6}
+  .ac-p.won{background:rgba(116,192,138,.12)}
+  .ac-p.won .ac-pos{color:#74C08A}
+  html[data-theme="light"] .ac-p.won{background:rgba(46,139,87,.1)}
+
+  /* Phase 3 console */
+  .auc-console{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:18px}
+  .ac-search{position:relative}
+  .ac-search input{width:100%;box-sizing:border-box}
+  .ac-results{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:var(--card);
+    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-height:320px;overflow:auto}
+  .ac-results button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;background:none;
+    border:0;border-top:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:9px 12px;cursor:pointer}
+  .ac-results button:first-child{border-top:0}
+  .ac-results button:hover{background:var(--chalk)}
+  .ac-results .r-meta{color:var(--mute);font-size:11px;flex:0 0 auto}
+  .ac-results .r-writein{color:var(--stitch)}
+  .ac-bidbar{grid-column:1 / -1;display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding-top:14px}
+  .ac-bidbar input{width:120px}
+  .ac-bidbar select{min-width:200px}
+  .ac-bidbar .btn{background:var(--stitch);color:var(--paper);border-color:var(--stitch)}
+  .ac-player{min-height:120px;display:flex;gap:16px;align-items:flex-start;color:var(--mute)}
+  .ac-player.empty{align-items:center;justify-content:center;font-size:13px}
+  .ac-head{width:96px;height:96px;border-radius:10px;background:var(--field);flex:0 0 auto;object-fit:cover}
+  .ac-pinfo{flex:1 1 auto;min-width:0}
+  .ac-pname{font-family:"Oswald",sans-serif;font-size:22px;color:var(--ink);line-height:1.1}
+  .ac-pmeta{font-size:12.5px;color:var(--mute);margin:2px 0 10px}
+  .ac-stats{border-collapse:collapse;font-family:"Roboto Mono",monospace;font-size:12px;margin:0 0 8px}
+  .ac-stats th{color:var(--mute);font-weight:600;font-size:10px;letter-spacing:.04em;padding:2px 9px 4px;text-align:right}
+  .ac-stats th:first-child{text-align:left}
+  .ac-stats td{color:var(--ink);padding:2px 9px;text-align:right}
+  .ac-stats td:first-child{color:var(--mute);text-align:left;font-family:"Oswald",sans-serif}
   .auc-status{margin-top:6px;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
 
   /* ---- salary strip ---- */
@@ -550,6 +581,18 @@
       </div>
     </div>
     <div id="aucMobileMsg" class="auc-mobile" hidden>The Live Auction Tool is desktop-only — please open it on a larger screen.</div>
+    <div class="auc-console" id="aucConsole">
+      <div class="ac-search">
+        <input id="aucSearch" type="search" placeholder="Search player or type a write-in…" autocomplete="off">
+        <div id="aucResults" class="ac-results" hidden></div>
+      </div>
+      <div id="aucPlayer" class="ac-player empty">Search for a player to see projections.</div>
+      <div class="ac-bidbar">
+        <input id="aucBid" type="number" min="1" step="1" placeholder="Winning bid $">
+        <select id="aucWinner"><option value="">Winning team…</option></select>
+        <button class="btn" id="aucAssign">Assign player</button>
+      </div>
+    </div>
     <div id="aucGrid" class="auc-grid"></div>
     <div id="aucStatus" class="auc-status"></div>
   </div>
@@ -1050,21 +1093,21 @@ $('#bars').addEventListener('keydown',e=>{
   e.preventDefault(); jumpToTeam(b.dataset.team);
 });
 
-// Live Auction Tool — Phase 2: budget engine + live 16-team preview
+// Live Auction Tool — Phase 3: rosters + budget engine + player console + bidding
 (function(){
   const DB="https://stitches-fd635-default-rtdb.firebaseio.com";
   const WM_PATH="winterMeetings";
-  const AUCTION_PATH="auction2027";     // picks ledger (empty until Phase 3 bidding)
+  const AUCTION_PATH="auction2027";     // picks ledger
   const BUDGET=290, ROSTER=26;
   const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
   const view=document.getElementById('auctionView');
-  let teams=null;
+  let players=[], teams=null, selected=null;
 
-  async function loadTeams(){
-    if(teams) return teams;
-    try{ const r=await fetch('auction-players.json',{cache:'no-store'}); const j=await r.json(); teams=j.teams||[]; }
-    catch(e){ teams=[]; }
-    return teams;
+  async function loadData(){
+    if(teams) return;
+    try{ const r=await fetch('auction-players.json',{cache:'no-store'}); const j=await r.json();
+      players=j.players||[]; teams=j.teams||[]; }
+    catch(e){ teams=teams||[]; }
   }
   const dbGet=async path=>{ try{ const r=await fetch(`${DB}/${path}.json`); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } };
 
@@ -1078,16 +1121,72 @@ $('#bars').addEventListener('keydown',e=>{
     return net;
   }
   function auctionOf(picks){
-    const spent={}, won={};
+    const spent={}, won={}, list={};
     Object.values(picks||{}).forEach(p=>{
       if(!p||!p.team) return;
       spent[p.team]=(spent[p.team]||0)+(parseFloat(p.bid)||0);
       won[p.team]=(won[p.team]||0)+1;
+      (list[p.team]=list[p.team]||[]).push(p);
     });
-    return {spent, won};
+    return {spent, won, list};
   }
   const money=v=> (v<0?"-$"+Math.abs(v):"$"+v);
 
+  /* ---- player display ---- */
+  const HIT=['R','HR','RBI','SB','AVG','OPS'], PIT=['K','QS','BAA','ERA','WHIP','SVHD'];
+  function fmt(cat,v){
+    if(cat==='SVHD' && v==null) return 0;
+    if(v==null) return '—';
+    if(cat==='AVG'||cat==='OPS'||cat==='BAA') return (+v).toFixed(3).replace(/^0(?=\.)/,'');
+    if(cat==='ERA'||cat==='WHIP') return (+v).toFixed(2);
+    return Math.round(+v);
+  }
+  function statTable(cats,p){
+    const head='<tr><th></th>'+cats.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+    const row=(lab,obj)=>`<tr><td>${lab}</td>`+cats.map(c=>`<td>${fmt(c,obj?obj[c]:null)}</td>`).join('')+'</tr>';
+    const prevLab="'"+String(p.prevSeason||'').slice(-2);
+    return `<table class="ac-stats">${head}${row('Proj',p.proj)}${p.rookie?'':row(prevLab,p.prev)}</table>`;
+  }
+  function playerCard(p){
+    if(p.writein) return `<div class="ac-pinfo"><div class="ac-pname">${esc(p.name)}</div><div class="ac-pmeta">Write-in · no projections</div></div>`;
+    const img=`https://a.espncdn.com/i/headshots/mlb/players/full/${p.id}.png`;
+    const stats=p.twoWay?statTable(HIT,p)+statTable(PIT,p):(p.pitcher?statTable(PIT,p):statTable(HIT,p));
+    return `<img class="ac-head" src="${img}" onerror="this.style.visibility='hidden'" alt="">
+      <div class="ac-pinfo">
+        <div class="ac-pname">${esc(p.name)}</div>
+        <div class="ac-pmeta">${esc(p.mlb||'')}${p.pos?' · '+esc(p.pos):''}${p.rookie?' · Rookie':''}</div>
+        ${stats}
+      </div>`;
+  }
+  function selectPlayer(p){
+    selected=p;
+    const el=document.getElementById('aucPlayer'); el.classList.remove('empty'); el.innerHTML=playerCard(p);
+    document.getElementById('aucResults').hidden=true;
+    document.getElementById('aucBid').focus();
+  }
+
+  /* ---- search ---- */
+  function runSearch(){
+    const raw=document.getElementById('aucSearch').value.trim();
+    const q=raw.toLowerCase(), box=document.getElementById('aucResults');
+    if(!q){ box.hidden=true; box.innerHTML=''; return; }
+    const hits=players.filter(p=>(p.name||'').toLowerCase().includes(q)).slice(0,8);
+    let html=hits.map(p=>`<button data-id="${p.id}"><span>${esc(p.name)}</span><span class="r-meta">${esc(p.mlb||'')} ${esc(p.pos||'')}</span></button>`).join('');
+    html+=`<button data-writein="1" class="r-writein"><span>Use “${esc(raw)}” as write-in</span></button>`;
+    box.innerHTML=html; box.hidden=false;
+  }
+  function resultClick(e){
+    const b=e.target.closest('button'); if(!b) return;
+    if(b.dataset.writein){ selectPlayer({writein:true,name:document.getElementById('aucSearch').value.trim(),pos:'',mlb:'',id:null}); }
+    else { const p=players.find(x=>String(x.id)===b.dataset.id); if(p) selectPlayer(p); }
+  }
+
+  /* ---- board ---- */
+  function fillWinners(tks){
+    const sel=document.getElementById('aucWinner'), cur=sel.value;
+    sel.innerHTML='<option value="">Winning team…</option>'+tks.map(t=>`<option value="${esc(t.team)}">${esc(t.team)}</option>`).join('');
+    sel.value=cur;
+  }
   function render(tks, net, auc){
     const byTeam={};
     (DATA.records||[]).forEach(r=>{ (byTeam[r.team]=byTeam[r.team]||[]).push(r); });
@@ -1098,9 +1197,10 @@ $('#bars').addEventListener('keydown',e=>{
       const remaining=BUDGET+wn-keeperSal-spent;
       const open=ROSTER-keepers-won;
       const maxBid=open>0 ? remaining-(open-1) : 0;
+      const wonRows=(auc.list[t.team]||[]).map(p=>`<div class="ac-p won"><span class="ac-pos">W</span><span class="ac-nm">${esc(p.player)}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
       const roster=(byTeam[t.team]||[]).map(r=>{
         const bench=/^(BE|IL)$/i.test(r.pos||'');
-        const sal=(r.p&&r.p[2026])?'$'+r.p[2026]:'';
+        const sal=(r.p&&r.p[2026])?'$'+r.p[2026]:'$5';
         return `<div class="ac-p${bench?' bench':''}"><span class="ac-pos">${esc(r.pos||'')}</span><span class="ac-nm">${esc(r.player)}</span><span class="ac-sal">${sal}</span></div>`;
       }).join('');
       return `<div class="ac-col">
@@ -1113,30 +1213,77 @@ $('#bars').addEventListener('keydown',e=>{
             <span>Open <b>${open}</b></span>
           </div>
         </div>
-        <div class="ac-roster">${roster||'<div class="ac-p"><span class="ac-nm" style="color:var(--mute)">No roster data</span></div>'}</div>
+        <div class="ac-roster">${wonRows}${roster||'<div class="ac-p"><span class="ac-nm" style="color:var(--mute)">No roster data</span></div>'}</div>
       </div>`;
     }).join('');
   }
   async function refresh(){
-    const status=document.getElementById('aucStatus');
-    status.textContent='Loading…';
-    const [tks, wm, picks]=await Promise.all([loadTeams(), dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
-    if(!tks.length){ status.textContent='Could not load team data (auction-players.json). Run the build, then reopen.'; return; }
-    render(tks, wmNetOf(wm), auctionOf(picks));
-    status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${tks.length} teams · keepers pending 2027 roll · updated ${new Date().toLocaleTimeString()}`;
+    const status=document.getElementById('aucStatus'); status.textContent='Loading…';
+    await loadData();
+    const [wm, picks]=await Promise.all([dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
+    if(!teams||!teams.length){ status.textContent='Could not load team data (auction-players.json). Run the build, then reopen.'; return; }
+    fillWinners(teams);
+    render(teams, wmNetOf(wm), auctionOf(picks));
+    status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${teams.length} teams · keepers pending 2027 roll · updated ${new Date().toLocaleTimeString()}`;
   }
+
+  /* ---- bidding ---- */
+  async function exportPicks(){
+    const picks=await dbGet(AUCTION_PATH);
+    const list=Object.values(picks||{}).filter(p=>p&&p.team).sort((a,b)=>(a.ts||0)-(b.ts||0));
+    if(!list.length || typeof XLSX==='undefined') return;
+    const header=['Pick','Player','Team','Bid','Pos','MLB'];
+    const aoa=[header, ...list.map((p,i)=>[i+1, p.player, p.team, p.bid, p.pos||'', p.mlb||''])];
+    const ws=XLSX.utils.aoa_to_sheet(aoa), wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Auction');
+    XLSX.writeFile(wb, `108-auction-pick-${String(list.length).padStart(3,'0')}.xlsx`);
+  }
+  async function assign(){
+    if(!selected){ flash('Pick a player first'); return; }
+    const bid=parseInt(document.getElementById('aucBid').value,10);
+    const team=document.getElementById('aucWinner').value;
+    if(!team){ flash('Choose the winning team'); return; }
+    if(!(bid>=1)){ flash('Enter a bid of $1 or more'); return; }
+    const pick={player:selected.name, playerId:selected.id||null, pos:selected.pos||'', mlb:selected.mlb||'', team, bid, ts:Date.now()};
+    const btn=document.getElementById('aucAssign'); btn.disabled=true;
+    try{
+      const r=await fetch(`${DB}/${AUCTION_PATH}.json`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pick)});
+      if(!r.ok) throw new Error('write failed');
+    }catch(e){ flash('Could not save the pick'); btn.disabled=false; return; }
+    selected=null;
+    document.getElementById('aucSearch').value='';
+    document.getElementById('aucBid').value='';
+    const pe=document.getElementById('aucPlayer'); pe.classList.add('empty'); pe.textContent='Search for a player to see projections.';
+    await refresh();
+    await exportPicks();
+    btn.disabled=false;
+    flash(`Assigned ${pick.player} to ${team} for $${bid}`);
+    document.getElementById('aucSearch').focus();
+  }
+
   function openView(){
     view.hidden=false; document.body.style.overflow='hidden';
     const small=window.innerWidth<900;
     document.getElementById('aucMobileMsg').hidden=!small;
+    document.getElementById('aucConsole').style.display=small?'none':'';
     document.getElementById('aucGrid').style.display=small?'none':'';
     if(!small) refresh();
   }
   function closeView(){ view.hidden=true; document.body.style.overflow=''; }
+
   document.getElementById('auctionBtn').addEventListener('click',openView);
   document.getElementById('aucClose').addEventListener('click',closeView);
   document.getElementById('aucRefresh').addEventListener('click',refresh);
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!view.hidden) closeView(); });
+  document.getElementById('aucSearch').addEventListener('input',runSearch);
+  document.getElementById('aucResults').addEventListener('click',resultClick);
+  document.getElementById('aucAssign').addEventListener('click',assign);
+  document.getElementById('aucBid').addEventListener('keydown',e=>{ if(e.key==='Enter') assign(); });
+  document.addEventListener('click',e=>{ if(!e.target.closest('.ac-search')){ const b=document.getElementById('aucResults'); if(b) b.hidden=true; } });
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape'||view.hidden) return;
+    const b=document.getElementById('aucResults');
+    if(b && !b.hidden){ b.hidden=true; } else closeView();
+  });
 })();
 
 // temporary: surface the Phase-1 auction data sample
