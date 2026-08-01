@@ -243,7 +243,20 @@
 
   /* Live Auction Tool (desktop full-screen) */
   #auctionView{position:fixed;inset:0;z-index:200;background:var(--paper);overflow:auto}
-  .auc-shell{max-width:1440px;margin:0 auto;padding:18px 22px 60px}
+  .auc-shell{max-width:none;margin:0;padding:16px 20px 40px}
+  .auc-body{display:flex;gap:18px;align-items:flex-start}
+  .auc-main{flex:1 1 auto;min-width:0}
+  .auc-tracker{flex:0 0 292px;position:sticky;top:74px;max-height:calc(100vh - 92px);overflow:auto;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 8px 12px}
+  .trk-head{font-family:"Oswald",sans-serif;font-size:14px;font-weight:600;letter-spacing:.04em;padding:6px 8px 10px;color:var(--ink)}
+  .trk-row{display:grid;grid-template-columns:1fr 52px 52px 34px;gap:6px;align-items:center;padding:5px 8px;font-size:12px;font-variant-numeric:tabular-nums}
+  .trk-row>span:not(.trk-tn){text-align:right;font-family:"Roboto Mono",monospace;color:var(--ink)}
+  .trk-tn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+  .trk-row .mx{color:var(--stitch)}
+  .trk-row .neg{color:var(--warn)}
+  .trk-lab{color:var(--mute);border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:2px}
+  .trk-lab span,.trk-lab .trk-tn{color:var(--mute)!important;font-family:inherit!important;font-size:10px;letter-spacing:.03em}
+  .trk-row:not(.trk-lab):nth-child(even){background:var(--chalk)}
   .auc-top{display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;
     background:var(--paper);padding:10px 0 14px;border-bottom:1px solid var(--line);margin-bottom:20px;z-index:2}
   .auc-top h2{font-family:"Oswald",sans-serif;font-size:26px;margin:0;letter-spacing:.01em}
@@ -585,7 +598,9 @@
       </div>
     </div>
     <div id="aucMobileMsg" class="auc-mobile" hidden>The Live Auction Tool is desktop-only — please open it on a larger screen.</div>
-    <div class="auc-console" id="aucConsole">
+    <div class="auc-body" id="aucBody">
+     <div class="auc-main">
+      <div class="auc-console" id="aucConsole">
       <div class="ac-search">
         <input id="aucSearch" type="search" placeholder="Search player or type a write-in…" autocomplete="off">
         <div id="aucResults" class="ac-results" hidden></div>
@@ -599,6 +614,9 @@
     </div>
     <div id="aucGrid" class="auc-grid"></div>
     <div id="aucStatus" class="auc-status"></div>
+     </div>
+     <aside class="auc-tracker" id="aucTracker"></aside>
+    </div>
   </div>
 </div>
 
@@ -1224,14 +1242,33 @@ $('#bars').addEventListener('keydown',e=>{
     return {slots, overflow};
   }
 
+  function computeTeam(t, net, auc){
+    const wn=net[t.team]||0, spent=auc.spent[t.team]||0, won=auc.won[t.team]||0;
+    const keepers=KEEPERS_READY?(t.keeperCount||0):0;
+    const keeperSal=KEEPERS_READY?(t.keeperSalary2027||0):0;
+    const remaining=BUDGET+wn-keeperSal-spent;
+    const open=ROSTER-keepers-won;
+    const maxBid=open>0 ? remaining-(open-1) : 0;
+    return {remaining, open, maxBid, won, spent, wn};
+  }
+  function renderTracker(tks, net, auc){
+    const rows=tks.map(t=>{
+      const c=computeTeam(t, net, auc);
+      return `<div class="trk-row">
+        <span class="trk-tn" title="${esc(t.team)}">${esc(t.team)}</span>
+        <span class="${c.remaining<0?'neg':''}">${money(c.remaining)}</span>
+        <span class="mx">${c.open>0?money(c.maxBid):'—'}</span>
+        <span>${c.open}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('aucTracker').innerHTML=
+      `<div class="trk-head">Teams at a glance</div>
+       <div class="trk-row trk-lab"><span class="trk-tn">Team</span><span>Rem</span><span>Max</span><span>Open</span></div>
+       ${rows}`;
+  }
   function render(tks, net, auc){
     document.getElementById('aucGrid').innerHTML=tks.map(t=>{
-      const wn=net[t.team]||0, spent=auc.spent[t.team]||0, won=auc.won[t.team]||0;
-      const keepers=KEEPERS_READY?(t.keeperCount||0):0;
-      const keeperSal=KEEPERS_READY?(t.keeperSalary2027||0):0;
-      const remaining=BUDGET+wn-keeperSal-spent;
-      const open=ROSTER-keepers-won;
-      const maxBid=open>0 ? remaining-(open-1) : 0;
+      const {remaining, open, maxBid}=computeTeam(t, net, auc);
       const {slots, overflow}=assignSlots(auc.list[t.team]||[]);
       const rows=slots.map(s=>{
         const p=s.player;
@@ -1258,7 +1295,9 @@ $('#bars').addEventListener('keydown',e=>{
     const [wm, picks]=await Promise.all([dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
     if(!teams||!teams.length){ status.textContent='Could not load team data (auction-players.json). Run the build, then reopen.'; return; }
     fillWinners(teams);
-    render(teams, wmNetOf(wm), auctionOf(picks));
+    const net=wmNetOf(wm), auc=auctionOf(picks);
+    render(teams, net, auc);
+    renderTracker(teams, net, auc);
     status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${teams.length} teams · keepers pending 2027 roll · updated ${new Date().toLocaleTimeString()}`;
   }
 
@@ -1319,8 +1358,7 @@ $('#bars').addEventListener('keydown',e=>{
     view.hidden=false; document.body.style.overflow='hidden';
     const small=window.innerWidth<900;
     document.getElementById('aucMobileMsg').hidden=!small;
-    document.getElementById('aucConsole').style.display=small?'none':'';
-    document.getElementById('aucGrid').style.display=small?'none':'';
+    document.getElementById('aucBody').style.display=small?'none':'';
     if(!small) refresh();
   }
   function closeView(){ view.hidden=true; document.body.style.overflow=''; }
