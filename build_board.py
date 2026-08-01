@@ -38,6 +38,7 @@ ESPN_URL_OVERRIDE = "https://espn-relay.baseball-gm.workers.dev/"   # your Cloud
 PROJECTION_SEASON = 2026   # projections to show in the auction; flip to 2027 before the March 2027 auction
 AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
+KEEPER_DIAG       = True    # Phase 2: identify the live-ESPN field that marks a 2027 keeper
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
@@ -344,6 +345,43 @@ def build_auction_players(limit=1500):
              "svhdProbe": probe, "samples": samples}
     return full, check
 
+def keeper_diagnostic(league):
+    """Find the live-ESPN field that marks a 2027 keeper. Dumps candidate fields per team
+    plus full detail for the two teams named in testing (Iguchigang, NATy Lights)."""
+    members = {}
+    for m in league.get("members", []):
+        full = f"{(m.get('firstName') or '').strip()} {(m.get('lastName') or '').strip()}".strip()
+        members[m.get("id")] = full or (m.get("displayName") or "")
+    entry_keys, pool_keys = set(), set()
+    summary, detail = [], {}
+    want = ("iguchi", "naty")
+    for t in league.get("teams", []):
+        tname = (t.get("name") or " ".join(x for x in (t.get("location"), t.get("nickname")) if x) or "").strip()
+        owners = t.get("owners") or []
+        owner = members.get(owners[0], "") if owners else ""
+        rows = (t.get("roster") or {}).get("entries", [])
+        kv = kvf = keepflag = 0
+        det = []
+        for e in rows:
+            entry_keys.update(e.keys())
+            ppe = e.get("playerPoolEntry") or {}
+            pool_keys.update(ppe.keys())
+            pl = ppe.get("player") or {}
+            v_kv, v_kvf = ppe.get("keeperValue"), ppe.get("keeperValueFuture")
+            keepish = {k: v for k, v in list(e.items()) + list(ppe.items()) if "keep" in k.lower()}
+            if v_kv not in (None, 0): kv += 1
+            if v_kvf not in (None, 0): kvf += 1
+            if any(v is True for v in keepish.values()): keepflag += 1
+            if any(w in tname.lower() for w in want):
+                det.append({"player": pl.get("fullName"), "acq": e.get("acquisitionType"),
+                            "keeperValue": v_kv, "keeperValueFuture": v_kvf, "keepish": keepish})
+        summary.append({"team": tname, "owner": owner, "entries": len(rows),
+                        "keeperValueSet": kv, "keeperValueFutureSet": kvf, "keepFlagTrue": keepflag})
+        if det:
+            detail[tname] = det
+    return {"entryKeys": sorted(entry_keys), "poolKeys": sorted(pool_keys),
+            "summary": sorted(summary, key=lambda x: x["team"]), "detail": detail}
+
 def build():
     if not WORKSHEET.exists(): sys.exit(f"Can't find the worksheet: {WORKSHEET}")
     if not TEMPLATE.exists():  sys.exit("Can't find template.html next to this script.")
@@ -359,6 +397,7 @@ def build():
     records, teams, live = draft_records, team_meta(draft_records), False
     stale = False; snapshot_at = ""; standings = None
     live_error = live_hint = target = ""
+    keeper_diag = None
     if USE_ESPN:
         target = ESPN_URL_OVERRIDE or (
             f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{ESPN_SEASON}"
@@ -373,6 +412,9 @@ def build():
             records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM)
             standings = compute_standings(league)
             live = True
+            if KEEPER_DIAG:
+                try: keeper_diag = keeper_diagnostic(league)
+                except Exception as e: keeper_diag = {"note": f"{type(e).__name__}: {e}"}
             counts = {t: sum(1 for r in records if r["tag"] == t) for t in ("kept","auction","traded","fa")}
             print(f"  live: {len(records)} current roster spots — {counts['kept']} kept, "
                   f"{counts['auction']} auction, {counts['traded']} traded, {counts['fa']} free agents "
@@ -438,6 +480,8 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
+    if keeper_diag is not None:
+        data["keeperDiag"] = keeper_diag
     if AUCTION_DIAG:
         try: data["auctionDiag"] = auction_diagnostic()
         except Exception as e: data["auctionDiag"] = {"ok": False, "note": f"{type(e).__name__}: {e}"}

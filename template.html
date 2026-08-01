@@ -1124,7 +1124,7 @@ $('#bars').addEventListener('keydown',e=>{
 })();
 
 // temporary: surface the Phase-1 auction data sample
-const _adiag = DATA.auctionBakeCheck || DATA.auctionDiag;
+const _adiag = DATA.keeperDiag || DATA.auctionBakeCheck || DATA.auctionDiag;
 if(_adiag){
   document.getElementById('auctionDiagOut').textContent=JSON.stringify(_adiag,null,2);
   document.getElementById('auctionDiag').style.display='';
