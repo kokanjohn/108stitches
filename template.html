@@ -267,6 +267,7 @@
   .ac-sal{font-family:"Roboto Mono",monospace;color:var(--mute);font-size:11px}
   .ac-p.won{background:rgba(116,192,138,.12)}
   .ac-p.won .ac-pos{color:#74C08A}
+  .ac-p.open .ac-pos{color:var(--mute);opacity:.7}
   html[data-theme="light"] .ac-p.won{background:rgba(46,139,87,.1)}
 
   /* Phase 3 console */
@@ -1190,9 +1191,38 @@ $('#bars').addEventListener('keydown',e=>{
     sel.innerHTML='<option value="">Winning team…</option>'+tks.map(t=>`<option value="${esc(t.team)}">${esc(t.team)}</option>`).join('');
     sel.value=cur;
   }
-  const POSORD={C:0,'1B':1,'2B':2,SS:3,'3B':4,OF:5,LF:5,CF:5,RF:5,DH:6,UT:6,SP:7,P:7,RP:8};
-  const posFirst=pos=>(pos||'').split(',')[0].trim();
-  const posRank=pos=>{ const f=posFirst(pos).toUpperCase(); return POSORD[f]!=null?POSORD[f]:9; };
+  const ROSTER_TEMPLATE=['C','1B','2B','SS','3B','MI','CI','OF','OF','OF','OF','UT','UT','P','P','SP','SP','SP','SP','RP','RP','BE','BE','BE','BE','BE'];
+  const FILL_PRIORITY=['C','1B','2B','SS','3B','OF','SP','RP','MI','CI','P','UT','BE'];
+  const HITSET=new Set(['C','1B','2B','SS','3B','OF','LF','CF','RF','DH','UT']);
+  const PITSET=new Set(['SP','RP','P']);
+  const parsePos=pos=>(pos||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+  function accepts(type,pos){
+    const has=x=>pos.includes(x);
+    switch(type){
+      case 'C':return has('C'); case '1B':return has('1B'); case '2B':return has('2B');
+      case 'SS':return has('SS'); case '3B':return has('3B');
+      case 'MI':return has('2B')||has('SS'); case 'CI':return has('1B')||has('3B');
+      case 'OF':return has('OF')||has('LF')||has('CF')||has('RF');
+      case 'UT':return pos.some(x=>HITSET.has(x));
+      case 'P':return pos.some(x=>PITSET.has(x));
+      case 'SP':return has('SP'); case 'RP':return has('RP');
+      case 'BE':return true;
+    }
+    return false;
+  }
+  function assignSlots(picks){
+    const slots=ROSTER_TEMPLATE.map(type=>({type,player:null})), overflow=[];
+    picks.slice().sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(pk=>{
+      const pos=parsePos(pk.pos); let placed=false;
+      for(const type of FILL_PRIORITY){
+        if(!accepts(type,pos)) continue;
+        const s=slots.find(x=>x.type===type && !x.player);
+        if(s){ s.player=pk; placed=true; break; }
+      }
+      if(!placed) overflow.push(pk);
+    });
+    return {slots, overflow};
+  }
 
   function render(tks, net, auc){
     document.getElementById('aucGrid').innerHTML=tks.map(t=>{
@@ -1202,9 +1232,12 @@ $('#bars').addEventListener('keydown',e=>{
       const remaining=BUDGET+wn-keeperSal-spent;
       const open=ROSTER-keepers-won;
       const maxBid=open>0 ? remaining-(open-1) : 0;
-      const rows=(auc.list[t.team]||[]).slice()
-        .sort((a,b)=>posRank(a.pos)-posRank(b.pos)||(a.ts||0)-(b.ts||0))
-        .map(p=>`<div class="ac-p won"><span class="ac-pos">${esc(posFirst(p.pos)||'—')}</span><span class="ac-nm">${esc(p.player)}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
+      const {slots, overflow}=assignSlots(auc.list[t.team]||[]);
+      const rows=slots.map(s=>{
+        const p=s.player;
+        return `<div class="ac-p slot ${p?'won':'open'}"><span class="ac-pos">${s.type}</span><span class="ac-nm">${p?esc(p.player):''}</span><span class="ac-sal">${p?'$'+p.bid:''}</span></div>`;
+      }).join('');
+      const over=overflow.map(p=>`<div class="ac-p won"><span class="ac-pos">+</span><span class="ac-nm">${esc(p.player)}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
       return `<div class="ac-col">
         <div class="ac-h">
           <div class="ac-tn">${esc(t.team)}</div>
@@ -1215,7 +1248,7 @@ $('#bars').addEventListener('keydown',e=>{
             <span>Open <b>${open}</b></span>
           </div>
         </div>
-        <div class="ac-roster">${rows||'<div class="ac-empty">— no players yet —</div>'}</div>
+        <div class="ac-roster">${rows}${over}</div>
       </div>`;
     }).join('');
   }
