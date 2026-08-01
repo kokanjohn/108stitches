@@ -346,41 +346,45 @@ def build_auction_players(limit=1500):
     return full, check
 
 def keeper_diagnostic(league):
-    """Find the live-ESPN field that marks a 2027 keeper. Dumps candidate fields per team
-    plus full detail for the two teams named in testing (Iguchigang, NATy Lights)."""
+    """Find where 2027 keeper declarations live. keeperValue/keeperValueFuture at 2026 are just
+    prices, so this checks the 2027 season pool per team (grouped by onTeamId)."""
     members = {}
     for m in league.get("members", []):
         full = f"{(m.get('firstName') or '').strip()} {(m.get('lastName') or '').strip()}".strip()
         members[m.get("id")] = full or (m.get("displayName") or "")
-    entry_keys, pool_keys = set(), set()
-    summary, detail = [], {}
-    want = ("iguchi", "naty")
+    id2name = {}
     for t in league.get("teams", []):
         tname = (t.get("name") or " ".join(x for x in (t.get("location"), t.get("nickname")) if x) or "").strip()
         owners = t.get("owners") or []
-        owner = members.get(owners[0], "") if owners else ""
-        rows = (t.get("roster") or {}).get("entries", [])
-        kv = kvf = keepflag = 0
-        det = []
-        for e in rows:
-            entry_keys.update(e.keys())
-            ppe = e.get("playerPoolEntry") or {}
-            pool_keys.update(ppe.keys())
-            pl = ppe.get("player") or {}
-            v_kv, v_kvf = ppe.get("keeperValue"), ppe.get("keeperValueFuture")
-            keepish = {k: v for k, v in list(e.items()) + list(ppe.items()) if "keep" in k.lower()}
-            if v_kv not in (None, 0): kv += 1
-            if v_kvf not in (None, 0): kvf += 1
-            if any(v is True for v in keepish.values()): keepflag += 1
-            if any(w in tname.lower() for w in want):
-                det.append({"player": pl.get("fullName"), "acq": e.get("acquisitionType"),
-                            "keeperValue": v_kv, "keeperValueFuture": v_kvf, "keepish": keepish})
-        summary.append({"team": tname, "owner": owner, "entries": len(rows),
-                        "keeperValueSet": kv, "keeperValueFutureSet": kvf, "keepFlagTrue": keepflag})
-        if det:
-            detail[tname] = det
-    return {"entryKeys": sorted(entry_keys), "poolKeys": sorted(pool_keys),
-            "summary": sorted(summary, key=lambda x: x["team"]), "detail": detail}
+        id2name[t.get("id")] = {"team": tname, "owner": members.get(owners[0], "") if owners else ""}
+
+    def pool(season):
+        base = ESPN_URL_OVERRIDE.rstrip("/"); sep = "&" if "?" in base else "?"
+        url = f"{base}{sep}mode=players&season={season}&limit=1500"
+        from espn_live import fetch_league
+        js = fetch_league(ESPN_LEAGUE_ID, season, url=url, timeout=60)
+        return js.get("players") if isinstance(js, dict) else None
+
+    def summarize(season):
+        try:
+            players = pool(season)
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+        if not players:
+            return {"error": "no players array (season may not exist yet)"}
+        agg = {}
+        for it in players:
+            tid = it.get("onTeamId")
+            if not tid or tid <= 0:
+                continue
+            a = agg.setdefault(tid, {"rostered": 0, "keeperValueSet": 0, "keeperValueFutureSet": 0})
+            a["rostered"] += 1
+            if it.get("keeperValue") not in (None, 0): a["keeperValueSet"] += 1
+            if it.get("keeperValueFuture") not in (None, 0): a["keeperValueFutureSet"] += 1
+        rows = [dict(id2name.get(tid, {"team": f"id{tid}", "owner": ""}), **a) for tid, a in agg.items()]
+        return sorted(rows, key=lambda x: x["team"])
+
+    return {"season2026": summarize(2026), "season2027": summarize(2027)}
 
 def build():
     if not WORKSHEET.exists(): sys.exit(f"Can't find the worksheet: {WORKSHEET}")
