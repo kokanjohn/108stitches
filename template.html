@@ -270,7 +270,7 @@
   html[data-theme="light"] .ac-p.won{background:rgba(46,139,87,.1)}
 
   /* Phase 3 console */
-  .auc-console{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start;
+  .auc-console{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;
     background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:18px}
   .ac-search{position:relative}
   .ac-search input{width:100%;box-sizing:border-box}
@@ -286,17 +286,18 @@
   .ac-bidbar input{width:120px}
   .ac-bidbar select{min-width:200px}
   .ac-bidbar .btn{background:var(--stitch);color:var(--paper);border-color:var(--stitch)}
-  .ac-player{min-height:120px;display:flex;gap:16px;align-items:flex-start;color:var(--mute)}
-  .ac-player.empty{align-items:center;justify-content:center;font-size:13px}
-  .ac-head{width:96px;height:96px;border-radius:10px;background:var(--field);flex:0 0 auto;object-fit:cover}
+  .ac-player{min-height:150px;display:flex;gap:20px;align-items:flex-start;color:var(--mute)}
+  .ac-player.empty{align-items:center;justify-content:center;font-size:14px}
+  .ac-head{width:132px;height:132px;border-radius:12px;background:var(--field);flex:0 0 auto;object-fit:cover}
   .ac-pinfo{flex:1 1 auto;min-width:0}
-  .ac-pname{font-family:"Oswald",sans-serif;font-size:22px;color:var(--ink);line-height:1.1}
-  .ac-pmeta{font-size:12.5px;color:var(--mute);margin:2px 0 10px}
-  .ac-stats{border-collapse:collapse;font-family:"Roboto Mono",monospace;font-size:12px;margin:0 0 8px}
-  .ac-stats th{color:var(--mute);font-weight:600;font-size:10px;letter-spacing:.04em;padding:2px 9px 4px;text-align:right}
+  .ac-pname{font-family:"Oswald",sans-serif;font-size:36px;font-weight:600;color:var(--ink);line-height:1.05}
+  .ac-pmeta{font-size:15px;color:var(--mute);margin:4px 0 12px}
+  .ac-stats{border-collapse:collapse;font-family:"Roboto Mono",monospace;font-size:13px;margin:0 0 8px}
+  .ac-stats th{color:var(--mute);font-weight:600;font-size:10px;letter-spacing:.04em;padding:2px 10px 4px;text-align:right}
   .ac-stats th:first-child{text-align:left}
-  .ac-stats td{color:var(--ink);padding:2px 9px;text-align:right}
+  .ac-stats td{color:var(--ink);padding:2px 10px;text-align:right}
   .ac-stats td:first-child{color:var(--mute);text-align:left;font-family:"Oswald",sans-serif}
+  .ac-empty{padding:18px 12px;color:var(--mute);font-size:12px;text-align:center}
   .auc-status{margin-top:6px;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
 
   /* ---- salary strip ---- */
@@ -576,6 +577,8 @@
     <div class="auc-top">
       <h2>Live Auction<span class="auc-sub">2027 · live rosters &amp; budget</span></h2>
       <div class="auc-actions">
+        <button class="btn" id="aucUndo">Undo</button>
+        <button class="btn" id="aucReset">Reset</button>
         <button class="btn" id="aucRefresh">Refresh</button>
         <button class="btn" id="aucClose">Close</button>
       </div>
@@ -1187,9 +1190,11 @@ $('#bars').addEventListener('keydown',e=>{
     sel.innerHTML='<option value="">Winning team…</option>'+tks.map(t=>`<option value="${esc(t.team)}">${esc(t.team)}</option>`).join('');
     sel.value=cur;
   }
+  const POSORD={C:0,'1B':1,'2B':2,SS:3,'3B':4,OF:5,LF:5,CF:5,RF:5,DH:6,UT:6,SP:7,P:7,RP:8};
+  const posFirst=pos=>(pos||'').split(',')[0].trim();
+  const posRank=pos=>{ const f=posFirst(pos).toUpperCase(); return POSORD[f]!=null?POSORD[f]:9; };
+
   function render(tks, net, auc){
-    const byTeam={};
-    (DATA.records||[]).forEach(r=>{ (byTeam[r.team]=byTeam[r.team]||[]).push(r); });
     document.getElementById('aucGrid').innerHTML=tks.map(t=>{
       const wn=net[t.team]||0, spent=auc.spent[t.team]||0, won=auc.won[t.team]||0;
       const keepers=KEEPERS_READY?(t.keeperCount||0):0;
@@ -1197,12 +1202,9 @@ $('#bars').addEventListener('keydown',e=>{
       const remaining=BUDGET+wn-keeperSal-spent;
       const open=ROSTER-keepers-won;
       const maxBid=open>0 ? remaining-(open-1) : 0;
-      const wonRows=(auc.list[t.team]||[]).map(p=>`<div class="ac-p won"><span class="ac-pos">W</span><span class="ac-nm">${esc(p.player)}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
-      const roster=(byTeam[t.team]||[]).map(r=>{
-        const bench=/^(BE|IL)$/i.test(r.pos||'');
-        const sal=(r.p&&r.p[2026])?'$'+r.p[2026]:'$5';
-        return `<div class="ac-p${bench?' bench':''}"><span class="ac-pos">${esc(r.pos||'')}</span><span class="ac-nm">${esc(r.player)}</span><span class="ac-sal">${sal}</span></div>`;
-      }).join('');
+      const rows=(auc.list[t.team]||[]).slice()
+        .sort((a,b)=>posRank(a.pos)-posRank(b.pos)||(a.ts||0)-(b.ts||0))
+        .map(p=>`<div class="ac-p won"><span class="ac-pos">${esc(posFirst(p.pos)||'—')}</span><span class="ac-nm">${esc(p.player)}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
       return `<div class="ac-col">
         <div class="ac-h">
           <div class="ac-tn">${esc(t.team)}</div>
@@ -1213,7 +1215,7 @@ $('#bars').addEventListener('keydown',e=>{
             <span>Open <b>${open}</b></span>
           </div>
         </div>
-        <div class="ac-roster">${wonRows}${roster||'<div class="ac-p"><span class="ac-nm" style="color:var(--mute)">No roster data</span></div>'}</div>
+        <div class="ac-roster">${rows||'<div class="ac-empty">— no players yet —</div>'}</div>
       </div>`;
     }).join('');
   }
@@ -1261,6 +1263,25 @@ $('#bars').addEventListener('keydown',e=>{
     document.getElementById('aucSearch').focus();
   }
 
+  async function undoLast(){
+    const picks=await dbGet(AUCTION_PATH);
+    const entries=Object.entries(picks||{}).filter(([k,p])=>p&&p.team);
+    if(!entries.length){ flash('No picks to undo'); return; }
+    entries.sort((a,b)=>(a[1].ts||0)-(b[1].ts||0));
+    const [key,p]=entries[entries.length-1];
+    try{ const r=await fetch(`${DB}/${AUCTION_PATH}/${key}.json`,{method:'DELETE'}); if(!r.ok) throw 0; }
+    catch(e){ flash('Could not undo'); return; }
+    await refresh();
+    flash(`Undid ${p.player} → ${p.team}`);
+  }
+  async function resetAll(){
+    if(!confirm('Clear ALL auction picks? This cannot be undone.')) return;
+    try{ const r=await fetch(`${DB}/${AUCTION_PATH}.json`,{method:'DELETE'}); if(!r.ok) throw 0; }
+    catch(e){ flash('Could not reset'); return; }
+    await refresh();
+    flash('Auction cleared');
+  }
+
   function openView(){
     view.hidden=false; document.body.style.overflow='hidden';
     const small=window.innerWidth<900;
@@ -1274,6 +1295,8 @@ $('#bars').addEventListener('keydown',e=>{
   document.getElementById('auctionBtn').addEventListener('click',openView);
   document.getElementById('aucClose').addEventListener('click',closeView);
   document.getElementById('aucRefresh').addEventListener('click',refresh);
+  document.getElementById('aucUndo').addEventListener('click',undoLast);
+  document.getElementById('aucReset').addEventListener('click',resetAll);
   document.getElementById('aucSearch').addEventListener('input',runSearch);
   document.getElementById('aucResults').addEventListener('click',resultClick);
   document.getElementById('aucAssign').addEventListener('click',assign);
