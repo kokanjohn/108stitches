@@ -309,11 +309,11 @@
   .ac-pinfo{flex:1 1 auto;min-width:0}
   .ac-pname{font-family:"Oswald",sans-serif;font-size:38px;font-weight:700;color:var(--ink);line-height:1.02}
   .ac-rook{font-family:"Roboto Mono",monospace;font-size:12px;font-weight:400;color:var(--mute);vertical-align:middle;margin-left:8px}
-  .ac-pteam{display:flex;align-items:center;gap:9px;font-size:15px;color:var(--mute);margin:5px 0 12px}
-  .ac-logo{width:28px;height:28px;object-fit:contain;flex:0 0 auto}
-  .ac-badges{display:flex;flex-wrap:wrap;gap:7px}
-  .ac-badge{font-family:"Oswald",sans-serif;font-size:16px;font-weight:600;letter-spacing:.03em;
-    padding:6px 14px;border-radius:8px;border:1.5px solid var(--ink);color:var(--ink);background:transparent}
+  .ac-logo-big{width:120px;height:120px;object-fit:contain;flex:0 0 auto}
+  .ac-page{font-size:14px;color:var(--mute);margin:6px 0 14px}
+  .ac-badges{display:flex;flex-wrap:wrap;gap:9px;margin-top:2px}
+  .ac-badge{font-family:"Oswald",sans-serif;font-size:19px;font-weight:600;letter-spacing:.03em;
+    padding:9px 18px;border-radius:9px;border:1.5px solid var(--ink);color:var(--ink);background:transparent}
   .ac-pstats{flex:0 0 auto;display:flex;gap:6px}
   .ac-stats{border-collapse:collapse;font-family:"Roboto Mono",monospace;font-size:12px;margin:0}
   .ac-stats th{color:var(--mute);font-weight:600;font-size:9.5px;letter-spacing:.03em;padding:2px 7px 4px;text-align:right}
@@ -1172,6 +1172,18 @@ $('#bars').addEventListener('keydown',e=>{
   const LOGO_FIX={ATH:'oak'};
   const teamLogo=abbr=>{ const a=(LOGO_FIX[abbr]||abbr||'').toLowerCase(); return a?`https://a.espncdn.com/i/teamlogos/mlb/500/${a}.png`:''; };
   const teamGradient=abbr=>{ const c=TEAM_COLOR[abbr]; return c?`linear-gradient(135deg, ${c}2b, ${c}0d)`:''; };
+  const ageCache={};
+  async function fetchAge(id){
+    if(!id) return null;
+    if(id in ageCache) return ageCache[id];
+    try{
+      const r=await fetch(`https://site.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${id}`);
+      if(!r.ok) throw 0;
+      const j=await r.json();
+      ageCache[id]=(j&&j.athlete&&j.athlete.age!=null)?j.athlete.age:null;
+    }catch(e){ ageCache[id]=null; }
+    return ageCache[id];
+  }
 
   /* ---- player display ---- */
   const HIT=['R','HR','RBI','SB','AVG','OPS'], PIT=['K','QS','BAA','ERA','WHIP','SVHD'];
@@ -1189,18 +1201,18 @@ $('#bars').addEventListener('keydown',e=>{
     return `<table class="ac-stats">${head}${row('Proj',p.proj)}${p.rookie?'':row(prevLab,p.prev)}</table>`;
   }
   function playerCard(p){
-    if(p.writein) return `<div class="ac-pinfo"><div class="ac-pname">${esc(p.name)}</div><div class="ac-pteam">Write-in · no projections</div></div>`;
+    if(p.writein) return `<div class="ac-pinfo"><div class="ac-pname">${esc(p.name)}</div><div class="ac-page">Write-in · no projections</div></div>`;
     const img=`https://a.espncdn.com/i/headshots/mlb/players/full/${p.id}.png`;
     const logo=teamLogo(p.mlb);
     const pos=parsePos(p.pos);
     const badges=(pos.length?pos:['—']).map(x=>`<span class="ac-badge">${esc(x)}</span>`).join('');
     const stats=p.twoWay?statTable(HIT,p)+statTable(PIT,p):(p.pitcher?statTable(PIT,p):statTable(HIT,p));
-    const age=(p.age!=null&&p.age!=='')?` · Age ${p.age}`:'';
-    const teamline=(logo?`<img class="ac-logo" src="${logo}" onerror="this.style.display='none'" alt="">`:'')+`<span>${esc(p.mlb||'')}${age}</span>`;
-    return `<img class="ac-head" src="${img}" onerror="this.style.visibility='hidden'" alt="">
+    const ageLine=(p.age!=null&&p.age!=='')?`Age ${p.age}`:'';
+    return `${logo?`<img class="ac-logo-big" src="${logo}" onerror="this.style.visibility='hidden'" alt="">`:''}
+      <img class="ac-head" src="${img}" onerror="this.style.visibility='hidden'" alt="">
       <div class="ac-pinfo">
         <div class="ac-pname">${esc(p.name)}${p.rookie?'<span class="ac-rook">Rookie</span>':''}</div>
-        <div class="ac-pteam">${teamline}</div>
+        <div class="ac-page"${ageLine?'':' style="display:none"'}>${ageLine}</div>
         <div class="ac-badges">${badges}</div>
       </div>
       <div class="ac-pstats">${stats}</div>`;
@@ -1211,6 +1223,13 @@ $('#bars').addEventListener('keydown',e=>{
     el.style.background=p.writein?'':teamGradient(p.mlb);
     document.getElementById('aucResults').hidden=true;
     document.getElementById('aucBid').focus();
+    if(!p.writein && p.id){
+      fetchAge(p.id).then(age=>{
+        if(selected!==p || age==null) return;
+        const line=el.querySelector('.ac-page');
+        if(line){ line.textContent=`Age ${age}`; line.style.display=''; }
+      });
+    }
   }
 
   /* ---- search ---- */
