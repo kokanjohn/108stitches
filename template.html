@@ -314,7 +314,8 @@
   .ac-badges{display:flex;flex-wrap:wrap;gap:9px;margin-top:2px}
   .ac-badge{font-family:"Oswald",sans-serif;font-size:19px;font-weight:600;letter-spacing:.03em;
     padding:9px 18px;border-radius:9px;border:1.5px solid var(--ink);color:var(--ink);background:transparent}
-  .ac-pstats{flex:0 0 auto;display:flex;gap:6px}
+  .ac-pstats{flex:0 0 auto;display:flex;flex-direction:column;gap:8px}
+  .ac-scap{caption-side:top;text-align:left;font:600 10px/1 "Oswald",sans-serif;letter-spacing:.05em;color:var(--mute);padding:0 0 3px}
   .ac-stats{border-collapse:collapse;font-family:"Roboto Mono",monospace;font-size:12px;margin:0}
   .ac-stats th{color:var(--mute);font-weight:600;font-size:9.5px;letter-spacing:.03em;padding:2px 7px 4px;text-align:right}
   .ac-stats th:first-child{text-align:left}
@@ -1194,11 +1195,11 @@ $('#bars').addEventListener('keydown',e=>{
     if(cat==='ERA'||cat==='WHIP') return (+v).toFixed(2);
     return Math.round(+v);
   }
-  function statTable(cats,p){
+  function statTable(cats,p,label){
     const head='<tr><th></th>'+cats.map(c=>`<th>${c}</th>`).join('')+'</tr>';
     const row=(lab,obj)=>`<tr><td>${lab}</td>`+cats.map(c=>`<td>${fmt(c,obj?obj[c]:null)}</td>`).join('')+'</tr>';
     const prevLab="'"+String(p.prevSeason||'').slice(-2);
-    return `<table class="ac-stats">${head}${row('Proj',p.proj)}${p.rookie?'':row(prevLab,p.prev)}</table>`;
+    return `<table class="ac-stats">${label?`<caption class="ac-scap">${label}</caption>`:''}${head}${row('Proj',p.proj)}${p.rookie?'':row(prevLab,p.prev)}</table>`;
   }
   function playerCard(p){
     if(p.writein) return `<div class="ac-pinfo"><div class="ac-pname">${esc(p.name)}</div><div class="ac-page">Write-in · no projections</div></div>`;
@@ -1206,7 +1207,7 @@ $('#bars').addEventListener('keydown',e=>{
     const logo=teamLogo(p.mlb);
     const pos=parsePos(p.pos);
     const badges=(pos.length?pos:['—']).map(x=>`<span class="ac-badge">${esc(x)}</span>`).join('');
-    const stats=p.twoWay?statTable(HIT,p)+statTable(PIT,p):(p.pitcher?statTable(PIT,p):statTable(HIT,p));
+    const stats=p.twoWay?statTable(HIT,p,'Batting')+statTable(PIT,p,'Pitching'):(p.pitcher?statTable(PIT,p):statTable(HIT,p));
     const ageLine=(p.age!=null&&p.age!=='')?`Age ${p.age}`:'';
     return `${logo?`<img class="ac-logo-big" src="${logo}" onerror="this.style.visibility='hidden'" alt="">`:''}
       <img class="ac-head" src="${img}" onerror="this.style.visibility='hidden'" alt="">
@@ -1347,15 +1348,53 @@ $('#bars').addEventListener('keydown',e=>{
   }
 
   /* ---- bidding ---- */
+  function scrollToTeam(team){
+    const grid=document.getElementById('aucGrid');
+    const idx=(teams||[]).findIndex(t=>t.team===team);
+    const col=grid&&grid.children[idx];
+    if(!col) return;
+    const gr=grid.getBoundingClientRect(), cr=col.getBoundingClientRect();
+    const target=grid.scrollLeft+(cr.left-gr.left)-(grid.clientWidth-cr.width)/2;
+    grid.scrollTo({left:Math.max(0,target), behavior:'smooth'});
+  }
+  function summarizeSlots(slots){
+    const counts={}; slots.forEach(s=>counts[s.type]=(counts[s.type]||0)+1);
+    return [...new Set(ROSTER_TEMPLATE)].filter(t=>counts[t]).map(t=>counts[t]>1?`${t}×${counts[t]}`:t).join(', ');
+  }
+  function sheetName(name, used){
+    let s=(name||'Team').replace(/[\\\/?*\[\]:]/g,' ').replace(/\s+/g,' ').trim().slice(0,28) || 'Team';
+    let n=s, i=2;
+    while(used[n.toLowerCase()]){ n=s.slice(0,25)+' '+i; i++; }
+    used[n.toLowerCase()]=1; return n;
+  }
   async function exportPicks(){
-    const picks=await dbGet(AUCTION_PATH);
-    const list=Object.values(picks||{}).filter(p=>p&&p.team).sort((a,b)=>(a.ts||0)-(b.ts||0));
-    if(!list.length || typeof XLSX==='undefined') return;
-    const header=['Pick','Player','Team','Bid','Pos','MLB'];
-    const aoa=[header, ...list.map((p,i)=>[i+1, p.player, p.team, p.bid, p.pos||'', p.mlb||''])];
-    const ws=XLSX.utils.aoa_to_sheet(aoa), wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Auction');
-    XLSX.writeFile(wb, `108-auction-pick-${String(list.length).padStart(3,'0')}.xlsx`);
+    if(typeof XLSX==='undefined') return;
+    const [wm, picks]=await Promise.all([dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
+    const net=wmNetOf(wm);
+    const all=Object.values(picks||{}).filter(p=>p&&p.team).sort((a,b)=>(a.ts||0)-(b.ts||0));
+    if(!all.length) return;
+    const wb=XLSX.utils.book_new();
+    const spent={}, tpicks={};
+    const aoa=[['Pick','Player','Team','Bid','Pos','MLB','Rem before','Rem after','Max bid','Positions avail before','Positions avail after']];
+    all.forEach((p,i)=>{
+      const t=p.team, before=tpicks[t]||[], sb=spent[t]||0, bid=parseFloat(p.bid)||0;
+      const remBefore=BUDGET+(net[t]||0)-sb;
+      const openBefore=assignSlots(before).slots.filter(s=>!s.player);
+      const maxBid=openBefore.length>0?remBefore-(openBefore.length-1):0;
+      const after=before.concat([p]);
+      const openAfter=assignSlots(after).slots.filter(s=>!s.player);
+      spent[t]=sb+bid; tpicks[t]=after;
+      aoa.push([i+1,p.player,t,bid,p.pos||'',p.mlb||'',remBefore,remBefore-bid,maxBid,summarizeSlots(openBefore),summarizeSlots(openAfter)]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Auction');
+    const used={};
+    (teams||[]).forEach(tm=>{
+      const {slots}=assignSlots(tpicks[tm.team]||[]);
+      const trows=[['Slot','Player','Bid']];
+      slots.forEach(s=>trows.push([s.type, s.player?s.player.player:'', s.player?(parseFloat(s.player.bid)||0):'']));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trows), sheetName(tm.team, used));
+    });
+    XLSX.writeFile(wb, `108-auction-pick-${String(all.length).padStart(3,'0')}.xlsx`);
   }
   async function assign(){
     if(!selected){ flash('Pick a player first'); return; }
@@ -1374,6 +1413,7 @@ $('#bars').addEventListener('keydown',e=>{
     document.getElementById('aucBid').value='';
     const pe=document.getElementById('aucPlayer'); pe.classList.add('empty'); pe.style.background=''; pe.textContent='Search for a player to see projections.';
     await refresh();
+    scrollToTeam(team);
     await exportPicks();
     btn.disabled=false;
     flash(`Assigned ${pick.player} to ${team} for $${bid}`);
