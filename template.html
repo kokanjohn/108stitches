@@ -1369,35 +1369,81 @@ $('#bars').addEventListener('keydown',e=>{
     const net=wmNetOf(wm);
     const all=Object.values(picks||{}).filter(p=>p&&p.team).sort((a,b)=>(a.ts||0)-(b.ts||0));
     if(!all.length) return;
+    const enc=XLSX.utils.encode_cell;
     const wb=XLSX.utils.book_new();
-    const spent={}, tpicks={};
-    const aoa=[['Pick','Player','Team','Bid','Pos','MLB','Rem before','Rem after','Max bid','Open before','Open after']];
-    all.forEach((p,i)=>{
-      const t=p.team, before=tpicks[t]||[], sb=spent[t]||0, bid=parseFloat(p.bid)||0;
-      const remBefore=BUDGET+(net[t]||0)-sb;
-      const openBefore=assignSlots(before).slots.filter(s=>!s.player);
-      const maxBid=openBefore.length>0?remBefore-(openBefore.length-1):0;
-      const after=before.concat([p]);
-      const openAfter=assignSlots(after).slots.filter(s=>!s.player);
-      spent[t]=sb+bid; tpicks[t]=after;
-      aoa.push([i+1,p.player,t,bid,p.pos||'',p.mlb||'',remBefore,remBefore-bid,maxBid,openBefore.length,openAfter.length]);
+    const MAX=1000, EXTRA=60;   // pre-filled blank formula rows for emergency entry
+
+    // team base values (keepers pending => salary/count 0)
+    const startBudget={}, openBase={};
+    (teams||[]).forEach(t=>{
+      const ks=KEEPERS_READY?(t.keeperSalary2027||0):0, kc=KEEPERS_READY?(t.keeperCount||0):0;
+      startBudget[t.team]=BUDGET+(net[t.team]||0)-ks;
+      openBase[t.team]=ROSTER-kc;
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Auction');
-    // At a glance — mirrors the dashboard tracker for periodic cross-checking
-    const glance=[['Team','Remaining','Max bid','Open']];
-    (teams||[]).forEach(tm=>{
-      const wn=net[tm.team]||0, sp=spent[tm.team]||0, won=(tpicks[tm.team]||[]).length;
-      const remaining=BUDGET+wn-sp, open=ROSTER-won;
-      glance.push([tm.team, remaining, open>0?remaining-(open-1):'', open]);
+
+    // ---- Setup: reference table the formulas read ----
+    const setup=[['Team','Start budget','Open base']];
+    (teams||[]).forEach(t=>setup.push([t.team, startBudget[t.team], openBase[t.team]]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(setup), 'Setup');
+
+    // ---- Auction: enter Player/Team/Bid, everything else is a live formula ----
+    const A={}, head=['Pick','Player','Team','Bid','Pos','MLB','Rem before','Rem after','Max bid','Open before','Open after'];
+    head.forEach((h,c)=>A[enc({r:0,c})]={t:'s',v:h});
+    const spent={}, count={}, nRows=all.length+EXTRA;
+    for(let i=0;i<nRows;i++){
+      const r=i+1, rr=r+1, p=all[i];
+      let gv,hv,iv,jv,kv;
+      if(p){
+        A[enc({r,c:1})]={t:'s',v:p.player};
+        A[enc({r,c:2})]={t:'s',v:p.team};
+        A[enc({r,c:3})]={t:'n',v:parseFloat(p.bid)||0};
+        A[enc({r,c:4})]={t:'s',v:p.pos||''};
+        A[enc({r,c:5})]={t:'s',v:p.mlb||''};
+        const t=p.team, sb=spent[t]||0, cb=count[t]||0, bid=parseFloat(p.bid)||0;
+        gv=(startBudget[t]!=null?startBudget[t]:BUDGET)-sb;
+        jv=(openBase[t]!=null?openBase[t]:ROSTER)-cb;
+        iv=gv-(jv-1); hv=gv-bid; kv=jv-1;
+        spent[t]=sb+bid; count[t]=cb+1;
+      }
+      const F=(c,f,v)=>{ const cell={t:'n',f}; if(v!==undefined)cell.v=v; A[enc({r,c})]=cell; };
+      const pk={t:'n',f:`IF(B${rr}="","",ROW()-1)`}; if(p) pk.v=i+1; A[enc({r,c:0})]=pk;
+      F(6,`IF(C${rr}="","",IFERROR(VLOOKUP(C${rr},Setup!$A:$C,2,0),${BUDGET})-SUMIFS($D$2:$D$${MAX},$C$2:$C$${MAX},C${rr},$A$2:$A$${MAX},"<"&A${rr}))`, gv);
+      F(7,`IF(C${rr}="","",G${rr}-D${rr})`, hv);
+      F(8,`IF(C${rr}="","",G${rr}-(J${rr}-1))`, iv);
+      F(9,`IF(C${rr}="","",IFERROR(VLOOKUP(C${rr},Setup!$A:$C,3,0),${ROSTER})-COUNTIFS($C$2:$C$${MAX},C${rr},$A$2:$A$${MAX},"<"&A${rr}))`, jv);
+      F(10,`IF(C${rr}="","",J${rr}-1)`, kv);
+    }
+    A['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRows,c:10}});
+    A['!cols']=[{wch:6},{wch:22},{wch:24},{wch:6},{wch:10},{wch:6},{wch:11},{wch:11},{wch:9},{wch:11},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, A, 'Auction');
+
+    // ---- At a glance: live mirror of the dashboard tracker ----
+    const G={};
+    ['Team','Remaining','Max bid','Open'].forEach((h,c)=>G[enc({r:0,c})]={t:'s',v:h});
+    (teams||[]).forEach((t,i)=>{
+      const r=i+1, rr=r+1;
+      const rem=(startBudget[t.team]!=null?startBudget[t.team]:BUDGET)-(spent[t.team]||0);
+      const open=(openBase[t.team]!=null?openBase[t.team]:ROSTER)-(count[t.team]||0);
+      G[enc({r,c:0})]={t:'s',v:t.team};
+      G[enc({r,c:1})]={t:'n',v:rem,f:`IFERROR(VLOOKUP(A${rr},Setup!$A:$C,2,0),${BUDGET})-SUMIF(Auction!$C:$C,A${rr},Auction!$D:$D)`};
+      G[enc({r,c:3})]={t:'n',v:open,f:`IFERROR(VLOOKUP(A${rr},Setup!$A:$C,3,0),${ROSTER})-COUNTIF(Auction!$C:$C,A${rr})`};
+      const mb=open>0?{t:'n',v:rem-(open-1)}:{t:'s',v:''};
+      G[enc({r,c:2})]={...mb,f:`IF(D${rr}>0,B${rr}-(D${rr}-1),"")`};
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(glance), 'At a glance');
+    G['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:(teams||[]).length,c:3}});
+    G['!cols']=[{wch:24},{wch:11},{wch:9},{wch:6}];
+    XLSX.utils.book_append_sheet(wb, G, 'At a glance');
+
+    // ---- per-team roster snapshots (position slots; static as of this download) ----
     const used={};
     (teams||[]).forEach(tm=>{
-      const {slots}=assignSlots(tpicks[tm.team]||[]);
+      const {slots}=assignSlots(all.filter(p=>p.team===tm.team));
       const trows=[['Slot','Player','Bid']];
       slots.forEach(s=>trows.push([s.type, s.player?s.player.player:'', s.player?(parseFloat(s.player.bid)||0):'']));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trows), sheetName(tm.team, used));
     });
+
+    wb.Workbook={CalcPr:{fullCalcOnLoad:true}};
     XLSX.writeFile(wb, `108-auction-pick-${String(all.length).padStart(3,'0')}.xlsx`);
   }
   async function assign(){
