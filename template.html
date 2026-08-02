@@ -437,14 +437,13 @@
 <body>
 <header class="mast"><div class="wrap">
   <div class="topbar">
-    <div class="kicker">Keeper League · Est. 2011</div>
+    <h1 class="title">108 Stitches</h1>
     <div class="topbar-actions">
       <button class="btn rules-btn" id="rulesBtn">League Rules</button>
       <button class="btn icon-btn" id="setBtn" aria-label="Settings" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
   </div>
-  <h1 class="title">108 Stitches</h1>
-  <p class="leadin" id="tagline">One board, same numbers for everyone.</p>
+  <p class="leadin" id="tagline"></p>
 </div></header>
 
 <div class="wrap">
@@ -590,11 +589,6 @@
   <button class="btn" id="wmBtn">Winter Meetings Cash Tracker</button>
   <button class="btn" id="auctionBtn">Live Auction Tool</button>
 </div></div>
-
-<details id="auctionDiag" style="display:none;max-width:900px;margin:-20px auto 40px;padding:0 20px">
-  <summary style="cursor:pointer;color:var(--mute);font-size:12px;letter-spacing:.04em">Auction data check (temporary)</summary>
-  <pre id="auctionDiagOut" style="white-space:pre-wrap;word-break:break-word;font-size:11px;line-height:1.5;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;color:var(--ink);overflow:auto;margin-top:10px"></pre>
-</details>
 
 <div id="auctionView" hidden>
   <div class="auc-shell">
@@ -749,8 +743,7 @@ document.addEventListener('click',e=>{
 }, true);
 (function(){const b=document.getElementById('statusbanner'); if(!b) return;
   if(DATA.live){
-    b.className='banner live';
-    b.innerHTML='<b>● Live from ESPN</b>'+(DATA.built_at?' · updated '+esc(DATA.built_at):'');
+    b.className=''; b.innerHTML='';
   } else if(DATA.stale){
     b.className='banner offline';
     b.innerHTML='<b>⚠ Live feed is paused</b> — showing the last live snapshot'
@@ -767,9 +760,8 @@ document.addEventListener('click',e=>{
   }
 })();
 (function(){
-  const src=DATA.live?'live from ESPN rosters':(DATA.stale?'last live snapshot':'draft-day rosters (ESPN offline)');
-  $('#tagline').innerHTML=`One board, same numbers for everyone · ${src}`;
-  $('#livelegend').innerHTML='';
+  const t=DATA.live?'Live from ESPN':(DATA.stale?'Live feed paused':'ESPN offline');
+  const tag=document.getElementById('tagline'); if(tag) tag.innerHTML='<b>'+t+'</b>';
 })();
 
 // League Rules modal
@@ -1475,13 +1467,6 @@ $('#bars').addEventListener('keydown',e=>{
     if(b && !b.hidden){ b.hidden=true; } else closeView();
   });
 })();
-
-// temporary: surface the Phase-1 auction data sample
-const _adiag = DATA.keeperDiag || DATA.auctionBakeCheck || DATA.auctionDiag;
-if(_adiag){
-  document.getElementById('auctionDiagOut').textContent=JSON.stringify(_adiag,null,2);
-  document.getElementById('auctionDiag').style.display='';
-}
 
 ['input','change'].forEach(ev=>{ $('#q').addEventListener(ev,render); teamSel.addEventListener(ev,render); posSel.addEventListener(ev,render); });
 setView(prefs.view==='master'?'master':'team');
