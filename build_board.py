@@ -38,7 +38,7 @@ ESPN_URL_OVERRIDE = "https://espn-relay.baseball-gm.workers.dev/"   # your Cloud
 PROJECTION_SEASON = 2026   # projections to show in the auction; flip to 2027 before the March 2027 auction
 AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
-KEEPER_DIAG       = True    # Phase 2: identify the live-ESPN field that marks a 2027 keeper
+KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
@@ -271,6 +271,19 @@ def _cat_line(stats_obj, catmap, want_hit, want_pit):
                 d["SVHD"] = (sv or 0) + (hl or 0)
     return d
 
+def _age(dob):
+    if not dob: return None
+    from datetime import datetime, date, timezone
+    try:
+        if isinstance(dob, (int, float)):
+            d = datetime.fromtimestamp(dob/1000 if dob > 1e11 else dob, timezone.utc).date()
+        else:
+            d = date.fromisoformat(str(dob)[:10])
+        t = date.today()
+        return t.year - d.year - ((t.month, t.day) < (d.month, d.day))
+    except Exception:
+        return None
+
 def build_auction_players(limit=1500):
     """Phase 1 bake: pull the ESPN player pool and produce compact records for the
     auction display — id, name, MLB team, positions, PROJECTION_SEASON projections,
@@ -313,6 +326,7 @@ def build_auction_players(limit=1500):
         players.append({
             "id": pid, "name": name, "mlb": PRO_TEAM.get(p.get("proTeamId"), ""),
             "pos": pos, "pitcher": is_pitcher, "twoWay": is_two_way, "rookie": prev is None,
+            "age": _age(p.get("dateOfBirth")),
             "proj": _cat_line(proj, None, want_hit, want_pit),
             "prev": _cat_line(prev, None, want_hit, want_pit),
             "prevSeason": prev_season,
@@ -342,7 +356,9 @@ def build_auction_players(limit=1500):
              "pitchers": sum(1 for r in players if r["pitcher"]),
              "twoWay": sum(1 for r in players if r["twoWay"]),
              "rookies": sum(1 for r in players if r["rookie"]),
-             "svhdProbe": probe, "samples": samples}
+             "svhdProbe": probe, "samples": samples,
+             "rawPlayerKeys": sorted((raw[0].get("player") or {}).keys()) if raw else [],
+             "ageSample": [{"name": r["name"], "age": r["age"]} for r in players[:5]]}
     return full, check
 
 def keeper_diagnostic(league):
