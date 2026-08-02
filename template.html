@@ -761,7 +761,8 @@ document.addEventListener('click',e=>{
 })();
 (function(){
   const t=DATA.live?'Live from ESPN':(DATA.stale?'Live feed paused':'ESPN offline');
-  const tag=document.getElementById('tagline'); if(tag) tag.innerHTML='<b>'+t+'</b>';
+  const tag=document.getElementById('tagline');
+  if(tag) tag.innerHTML='<b>'+t+'</b>'+(DATA.built_at?' · updated '+esc(DATA.built_at):'');
 })();
 
 // League Rules modal
