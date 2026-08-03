@@ -505,7 +505,8 @@
         <li>Transaction fees continue to accrue throughout the playoffs until the conclusion of the final championship game</li>
         <li>No player additions are permitted once games begin on the final Sunday of the championship</li>
         <li>Category winners are determined based on regular season results only (categories can be split in case of a tie)</li>
-        <li>The amount paid to each category winner is based on the total transaction fees collected including/during the playoffs</li>
+        <li>Each category winner receives 7% of the total transaction pool (fees collected through the playoffs)</li>
+        <li>The team with the best regular season record receives 16% of the total transaction pool</li>
         <li>No trading for future players, compensation, etc.</li>
         <li>New rules have a 1 season "waiting period" before being implemented</li>
         <li>Tiebreaker category alternates each year between a hitting ratio stat and a pitching ratio stat</li>
@@ -633,7 +634,7 @@
     <div class="modal-body">
       <div class="std-pool" id="stdPool"></div>
       <div class="std-payout" id="stdPayoutWrap" style="display:none">
-        <div class="std-payh">Pool earned by category leaders<span class="std-slice" id="stdSlice"></span></div>
+        <div class="std-payh">Pool payouts<span class="std-slice" id="stdSlice"></span></div>
         <div id="stdPayout"></div>
       </div>
       <details class="panel std-moves" id="stdMoves" style="display:none">
@@ -1536,13 +1537,21 @@ setView(prefs.view==='master'?'master':'team');
   function renderPayout(){
     if(!s || !s.payout || !s.payout.length){ payWrap.style.display='none'; return; }
     payWrap.style.display='';
-    sliceEl.textContent = s.slice!=null ? ` · each category = $${money(s.slice)}` : '';
+    const cs=(s.catShare!=null?s.catShare:s.slice);
+    sliceEl.textContent = cs!=null
+      ? ` · each category = $${money(cs)}` + (s.recordShare!=null?` · best record = $${money(s.recordShare)}`:'')
+      : '';
     const max=Math.max(...s.payout.map(p=>p.earned));
-    payEl.innerHTML=s.payout.map(p=>`<div class="pay-row">
+    payEl.innerHTML=s.payout.map(p=>{
+      const bits=[];
+      if(p.cats) bits.push(`${p.cats} cat${p.cats===1?'':'s'}`);
+      if(p.record) bits.push('best record');
+      return `<div class="pay-row">
       <div class="pay-team">${esc(p.team)}</div>
       <div class="pay-track"><div class="pay-fill" style="width:${max?(p.earned/max*100).toFixed(1):0}%"></div></div>
-      <div class="pay-amt">$${money(p.earned)} <span class="cats">${p.cats} cat${p.cats===1?'':'s'}</span></div>
-    </div>`).join('');
+      <div class="pay-amt">$${money(p.earned)} <span class="cats">${bits.join(' · ')}</span></div>
+    </div>`;
+    }).join('');
   }
   function renderMoves(){
     if(!s || !s.moves || !s.moves.length){ movesCard.style.display='none'; return; }

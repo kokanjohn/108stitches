@@ -186,10 +186,18 @@ def compute_standings(league):
     tds = []
     for t in teams:
         tc = t.get("transactionCounter") or {}
+        o = (t.get("record") or {}).get("overall") or {}
+        pct = o.get("percentage")
+        if pct is None:
+            w, l, ti = o.get("wins", 0) or 0, o.get("losses", 0) or 0, o.get("ties", 0) or 0
+            g = w + l + ti
+            pct = (w + 0.5 * ti) / g if g else 0.0
         tds.append({"team": tname(t), "vals": t.get("valuesByStat") or {},
-                    "acq": tc.get("acquisitions") or 0})
+                    "acq": tc.get("acquisitions") or 0,
+                    "pct": pct or 0.0, "wins": o.get("wins", 0) or 0})
     total_moves = sum(td["acq"] for td in tds)
-    slice_ = total_moves / len(CAT_ORDER) if CAT_ORDER else 0
+    slice_ = total_moves * 0.07          # each category winner = 7% of the pool
+    record_share = total_moves * 0.16    # best regular-season record = 16% of the pool
     cats = []
     earn, leads = {}, {}
     for label in CAT_ORDER:
@@ -210,11 +218,24 @@ def compute_standings(league):
             for w in winners:
                 earn[w] = earn.get(w, 0) + share
                 leads[w] = leads.get(w, 0) + 1
-    payout = sorted([{"team": t, "earned": round(earn[t]), "cats": leads[t]} for t in earn],
+    # best regular-season record (ties split; nothing awarded if no games played)
+    record_teams = []
+    if tds:
+        best_key = max((td["pct"], td["wins"]) for td in tds)
+        if best_key[0] or best_key[1]:
+            record_teams = [td["team"] for td in tds if (td["pct"], td["wins"]) == best_key]
+    if record_teams:
+        rshare = record_share / len(record_teams)
+        for rt in record_teams:
+            earn[rt] = earn.get(rt, 0) + rshare
+    payout = sorted([{"team": t, "earned": round(earn[t]), "cats": leads.get(t, 0),
+                      "record": t in record_teams} for t in earn],
                     key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
                    key=lambda x: (-x["moves"], x["team"]))
-    return {"pool": total_moves, "totalMoves": total_moves, "slice": round(slice_, 2),
+    return {"pool": total_moves, "totalMoves": total_moves,
+            "slice": round(slice_, 2), "catShare": round(slice_, 2),
+            "recordShare": round(record_share, 2), "recordTeams": record_teams,
             "moves": moves, "categories": cats, "payout": payout}
 
 def auction_diagnostic():
