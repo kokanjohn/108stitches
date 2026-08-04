@@ -252,9 +252,17 @@
   .auc-card{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column;overflow:hidden;
     background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
   .auc-card .cardh{font-family:"Oswald",sans-serif;font-size:13px;font-weight:600;letter-spacing:.04em;
-    color:var(--mute);text-transform:uppercase;margin:0 0 8px;flex:0 0 auto}
+    color:var(--mute);text-transform:uppercase;margin:0 0 8px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .card-retry{background:none;border:1px solid var(--line);color:var(--mute);border-radius:6px;cursor:pointer;
+    font-size:14px;line-height:1;padding:2px 7px;transition:color .15s,border-color .15s}
+  .card-retry:hover{color:var(--stitch);border-color:var(--stitch)}
   .auc-card .cardwrap{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}
-  .auc-card img.cardimg{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 3px 12px rgba(0,0,0,.2)}
+  .auc-card img.cardimg{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 3px 12px rgba(0,0,0,.2);cursor:zoom-in}
+  .card-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px}
+  .card-modal[hidden]{display:none}
+  .card-modal img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+  .card-modal-x{position:absolute;top:14px;right:22px;background:none;border:none;color:#fff;font-size:40px;line-height:1;cursor:pointer;opacity:.85}
+  .card-modal-x:hover{opacity:1}
   .auc-card .cardmsg{color:var(--mute);font-size:12px;text-align:center;line-height:1.5;padding:10px}
   .auc-card .cardspin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--stitch);border-radius:50%;animation:cardspin .8s linear infinite}
   @keyframes cardspin{to{transform:rotate(360deg)}}
@@ -638,6 +646,11 @@
      </div>
     </div>
   </div>
+</div>
+
+<div class="card-modal" id="cardModal" hidden>
+  <button class="card-modal-x" id="cardModalX" aria-label="Close">&times;</button>
+  <img id="cardModalImg" src="" alt="Baseball card (enlarged)">
 </div>
 
 <div class="modal" id="stdModal" role="dialog" aria-modal="true" aria-label="Category Standings" hidden>
@@ -1165,8 +1178,7 @@ $('#bars').addEventListener('keydown',e=>{
   const DB="https://stitches-fd635-default-rtdb.firebaseio.com";
   const WM_PATH="winterMeetings";
   const AUCTION_PATH="auction2027";     // picks ledger
-  const CARDS_PATH="cards_v2";          // shared cache of found card images, keyed by player id
-                                        // (bump this suffix anytime to ignore all previously cached images)
+  const CARDS_PATH="cards_v3";          // shared cache of found card images, keyed by player id
   const RELAY="https://espn-relay.baseball-gm.workers.dev";  // Cloudflare Worker (ESPN relay + card search)
   const BUDGET=290, ROSTER=26;
   const cardCache={};                   // in-memory cache for this session (by id or write-in name)
@@ -1274,43 +1286,53 @@ $('#bars').addEventListener('keydown',e=>{
   }
 
   /* ---- baseball card (lower-right panel) ---- */
+  function cardHead(withRetry){
+    return `<div class="cardh"><span>Baseball card</span>${withRetry?'<button class="card-retry" title="Try another card" aria-label="Try another card">↻</button>':''}</div>`;
+  }
   function renderCard(state){
     const box=document.getElementById('aucCard'); if(!box) return;
-    if(state==null){ box.innerHTML=`<div class="cardh">Baseball card</div><div class="cardwrap"><div class="cardmsg">Select a player to see their card.</div></div>`; return; }
-    if(state.loading){ box.innerHTML=`<div class="cardh">Baseball card</div><div class="cardwrap"><div class="cardspin"></div></div>`; return; }
+    if(state==null){ box.innerHTML=cardHead(false)+`<div class="cardwrap"><div class="cardmsg">Select a player to see their card.</div></div>`; return; }
+    if(state.loading){ box.innerHTML=cardHead(false)+`<div class="cardwrap"><div class="cardspin"></div></div>`; return; }
     if(state.img){
       const link=state.link?`<a class="cardlink" href="${esc(state.link)}" target="_blank" rel="noopener">more cards ↗</a>`:'';
-      box.innerHTML=`<div class="cardh">Baseball card</div>`+
-        `<div class="cardwrap"><img class="cardimg" src="${esc(state.img)}" alt="" `+
-        `onerror="this.closest('.auc-card').querySelector('.cardwrap').innerHTML='<div class=\\'cardmsg\\'>No card image found.</div>'"></div>`+link;
+      box.innerHTML=cardHead(true)+
+        `<div class="cardwrap"><img class="cardimg" src="${esc(state.img)}" alt="" title="Click to enlarge" `+
+        `onerror="this.closest('.auc-card').querySelector('.cardwrap').innerHTML='<div class=\\'cardmsg\\'>Image didn\\'t load — try again.</div>'"></div>`+link;
     } else {
       const link=state.link?`<a class="cardlink" href="${esc(state.link)}" target="_blank" rel="noopener">search cards ↗</a>`:'';
-      box.innerHTML=`<div class="cardh">Baseball card</div><div class="cardwrap"><div class="cardmsg">No card found for ${esc(state.name||'this player')}.</div></div>`+link;
+      box.innerHTML=cardHead(true)+`<div class="cardwrap"><div class="cardmsg">No card found for ${esc(state.name||'this player')}.</div></div>`+link;
     }
   }
-  async function loadCard(p){
+  async function loadCard(p, force){
     const name=(p&&p.name||'').trim();
-    const searchLink=name?`https://duckduckgo.com/?iax=images&ia=images&q=${encodeURIComponent(name+' rookie card')}`:null;
+    const searchLink=name?`https://www.ebay.com/sch/i.html?_sacat=212&_nkw=${encodeURIComponent(name+' rookie card')}`:null;
     if(!name || name.length<3){ renderCard({img:null,name,link:searchLink}); return; }
     const key=p.id?('id'+p.id):('nm'+name.toLowerCase());
-    // in-memory cache
-    if(key in cardCache){ if(selected===p) renderCard({...cardCache[key],name,link:cardCache[key].link||searchLink}); return; }
+    if(!force && key in cardCache){ if(selected===p) renderCard({...cardCache[key],name,link:cardCache[key].link||searchLink}); return; }
     renderCard({loading:true});
-    // shared Firebase cache (only for real pool players with an id)
-    if(p.id){
+    if(!force && p.id){
       const cached=await dbGet(`${CARDS_PATH}/${p.id}`);
       if(cached && ('img' in cached)){ cardCache[key]=cached; if(selected===p) renderCard({...cached,name,link:cached.link||searchLink}); return; }
     }
-    // ask the Worker to find one: query is exactly "{first} {last} rookie card"
+    // ask the Worker to find one (query is "{first} {last} rookie card"); force bypasses+overwrites cache
     let found={img:null,link:searchLink};
     try{
       const r=await fetch(`${RELAY}?mode=card&name=${encodeURIComponent(name)}`);
       if(r.ok){ const j=await r.json(); if(j&&j.img) found={img:j.img,link:j.link||searchLink}; }
     }catch(e){}
     cardCache[key]=found;
-    if(p.id && found.img){ try{ await fetch(`${DB}/${CARDS_PATH}/${p.id}.json`,{method:'PUT',body:JSON.stringify(found)}); }catch(e){} }
+    // persist finds; on a manual retry also persist the fresh result so a bad shared entry gets replaced
+    if(p.id && (found.img || force)){ try{ await fetch(`${DB}/${CARDS_PATH}/${p.id}.json`,{method:'PUT',body:JSON.stringify(found)}); }catch(e){} }
     if(selected===p) renderCard({...found,name});
   }
+  function openCardModal(src){ const m=document.getElementById('cardModal'); if(!m||!src) return; document.getElementById('cardModalImg').src=src; m.hidden=false; }
+  function closeCardModal(){ const m=document.getElementById('cardModal'); if(!m) return; m.hidden=true; document.getElementById('cardModalImg').src=''; }
+  document.getElementById('aucCard').addEventListener('click', e=>{
+    if(e.target.closest('.card-retry')){ if(selected) loadCard(selected, true); return; }
+    const img=e.target.closest('.cardimg'); if(img) openCardModal(img.getAttribute('src'));
+  });
+  document.getElementById('cardModal').addEventListener('click', e=>{ if(e.target.id==='cardModal'||e.target.id==='cardModalX') closeCardModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !document.getElementById('cardModal').hidden) closeCardModal(); });
 
   /* ---- search ---- */
   function runSearch(){
