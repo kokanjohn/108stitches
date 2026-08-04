@@ -39,11 +39,44 @@ PROJECTION_SEASON = 2026   # projections to show in the auction; flip to 2027 be
 AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
+NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
             "Agustin Ramirez":"Agustín Ramírez", "Augustin Ramirez":"Agustín Ramírez"}
+
+# Draft-tab spellings that differ from the canonical (Keeper Prices / ESPN) name.
+# The board joins the Draft tab to price history AND to the live ESPN roster by a
+# normalized name key, so a Draft typo silently detaches a player from his price
+# (e.g. "Garrett Cole" -> no match -> blank 2026, default $5 keeper cost instead of 13).
+# IMPORTANT: the value must match how BOTH ESPN and the Keeper Prices tab spell the
+# name, or the live join will still miss. Confirm against the mismatch report / ESPN
+# before adding an entry here. Keyed by the Draft-tab spelling (as typed).
+DRAFT_ALIAS = {
+    "Garrett Cole": "Gerrit Cole",        # NYY SP; Draft misspelled the first name
+    "Kikuchi": "Yusei Kikuchi",           # last-name-only entry
+    "Dylan Lilie": "Daylen Lile",         # WSH OF; misspelled both names
+    "Cedenne Rafalea": "Ceddanne Rafaela",# BOS OF; misspelled both names
+    "Max Muncy LAD": "Max Muncy",         # LAD 3B; team tag appended (note: 2nd "Max Muncy" exists)
+    "Emet Sheehan LAD": "Emmet Sheehan",  # LAD SP; misspelled + team tag
+    "Josh Smith TEX": "Josh Smith",       # TEX/TOR UT; team tag appended
+}
+
+# Draft names the mismatch report flags but that are actually correct — suppress the noise.
+# Each must be a real player whose live ESPN join already works; only the Keeper Prices
+# tab or the fuzzy heuristic is the odd one out. Confirmed against ESPN before adding.
+NAME_OK = {
+    "Matt Shaw",       # ESPN's name IS "Matt Shaw"; Keeper Prices lists the legal "Matthew Shaw"
+    "Devin Williams",  # a different player from "Gavin Williams" — not a typo, just not a keeper
+}
+
+# Names known to be shared by two different real MLB players. On roster displays the site
+# always appends the MLB team abbrev to these (e.g. "Max Muncy LAD" / "Max Muncy ATH"),
+# even when only one of them is currently rostered. The build also auto-detects duplicates
+# from the ESPN player pool (2+ player ids sharing a name), so this list is just a guaranteed
+# supplement for pairs where one player might fall outside the projected pool. Add names as needed.
+KNOWN_DUP_NAMES = {"Max Muncy", "Josh Smith"}
 DRAFT_LABEL = {"Waller":"Justin Waller","T. Carter":"Travis Carter","Linthicum":"Brandon Linthicum",
  "Schottmiller":"Matt Schottmiller","Amos":"Jonathan Amos","Bonham":"Andrew Bonham",
  "Walker":"Eric Walker","Eanes":"Casey Eanes","Martinez":"Sam Martinez","Hines":"Matt Hines",
@@ -94,6 +127,7 @@ def parse_worksheet(wb):
             if c >= len(r): continue
             name = norm(r[c]); price = toint(r[c+1]) if c+1 < len(r) else None
             if not name or name.upper() == "FILL IN" or name.startswith("#"): continue
+            name = DRAFT_ALIAS.get(name, name)   # canonicalize typos before keying/joining
             k = keyof(name); kept = k in KEPT; m = META.get(k)
             disp = m["name"] if m else NAME_FIX.get(name, name)
             cur = price if price is not None else (KEEP_PRICE.get(k) if kept else None)
@@ -423,11 +457,71 @@ def keeper_diagnostic(league):
 
     return {"season2026": summarize(2026), "season2027": summarize(2027)}
 
+def name_mismatch_report(wb):
+    """Flag Draft-tab player names that don't cleanly match a Keeper Prices name.
+    These are the silent failures behind wrong keeper costs: a mismatched name never
+    joins to price history or the live ESPN roster. Returns a list of dicts. The
+    fuzzy net in build_from_espn only fires at >=0.88, so anything below that will
+    SILENTLY fail on the live board; anything at/above may match (possibly the wrong
+    player) and still deserves a look. Aliased names (DRAFT_ALIAS) are excluded."""
+    import difflib
+    kp = {}
+    for i, r in enumerate(wb["Keeper Prices"].iter_rows(values_only=True)):
+        if i == 0 or r is None: continue
+        p = norm(r[2]) if len(r) > 2 else ""
+        if p: kp[keyof(p)] = p
+    kp_keys = list(kp)
+
+    rows = list(wb["Draft"].iter_rows(values_only=True))
+    cols = [c for c in range(1, len(rows[2]), 2) if norm(rows[2][c]) in DRAFT_LABEL]
+    seen, flagged, orphans = set(), [], 0
+    for r in rows[6:32]:
+        if r is None: continue
+        for c in cols:
+            if c >= len(r): continue
+            raw = norm(r[c])
+            if not raw or raw.upper() == "FILL IN" or raw.startswith("#"): continue
+            if raw in NAME_OK: continue            # confirmed correct despite the heuristic
+            name = DRAFT_ALIAS.get(raw, raw)
+            k = keyof(name)
+            if k in kp or k in seen: continue      # exact match or already handled
+            seen.add(k)
+            near = difflib.get_close_matches(k, kp_keys, n=1, cutoff=0.80)
+            cand = near[0] if near else None
+            if cand is None:                       # catch last-name-only / dropped-token entries
+                hits = [kk for kk in kp_keys if len(k) >= 6 and k != kk and (k in kk or kk in k)]
+                if len(hits) == 1: cand = hits[0]  # exactly one containment -> confident
+            if cand:
+                ratio = round(difflib.SequenceMatcher(None, k, cand).ratio(), 3)
+                flagged.append({"draft": raw, "candidate": kp[cand],
+                                "ratio": ratio, "silent": ratio < 0.88})
+            else:
+                orphans += 1                       # no close name -> likely a genuine new/FA player
+    flagged.sort(key=lambda x: x["ratio"])
+    return {"flagged": flagged, "orphans": orphans}
+
 def build():
     if not WORKSHEET.exists(): sys.exit(f"Can't find the worksheet: {WORKSHEET}")
     if not TEMPLATE.exists():  sys.exit("Can't find template.html next to this script.")
     wb = load_workbook(WORKSHEET, read_only=True, data_only=True)
     draft_records, index, OWNER_TEAM = parse_worksheet(wb)
+
+    if NAME_DIAG:
+        rep = name_mismatch_report(wb)
+        flagged = rep["flagged"]
+        silent = [f for f in flagged if f["silent"]]
+        verify = [f for f in flagged if not f["silent"]]
+        if silent:
+            print(f"  names: {len(silent)} Draft name(s) SILENTLY fail to join on the live "
+                  f"board (wrong/blank keeper cost). Confirm the real ones vs ESPN and add "
+                  f"them to DRAFT_ALIAS:")
+            for f in silent:
+                print(f"    - Draft '{f['draft']}'  ~  Keeper Prices '{f['candidate']}'  ({f['ratio']})")
+        else:
+            print("  names: no silent-fail mismatches — every Draft name joins on the live board.")
+        if verify:
+            print(f"  names: +{len(verify)} near-match(es) the live fuzzy auto-links (likely fine); "
+                  f"{rep['orphans']} unmatched look like new/FA players (expected).")
 
     from datetime import datetime, timezone
     try:
@@ -521,6 +615,17 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
+
+    # Duplicate-name set for display-only team tagging on rosters (keyof-normalized keys).
+    # Seed with the manual list + any name that shows up with 2+ distinct MLB teams among
+    # current records; the auction-pool pass below adds pool-detected duplicates.
+    mlb_by = {}
+    for r in records:
+        if r.get("player") and r.get("mlb"):
+            mlb_by.setdefault(keyof(r["player"]), set()).add(str(r["mlb"]).upper())
+    dupe_keys = {k for k, s in mlb_by.items() if len(s) >= 2}
+    dupe_keys |= {keyof(n) for n in KNOWN_DUP_NAMES}
+    data["dupeNames"] = sorted(dupe_keys)
     if keeper_diag is not None:
         data["keeperDiag"] = keeper_diag
     if AUCTION_DIAG:
@@ -529,6 +634,14 @@ def build():
     if AUCTION_BAKE:
         try:
             full, check = build_auction_players()
+            if full is not None:
+                ids_by = {}
+                for p in full.get("players", []):
+                    if p.get("name") and p.get("id") is not None:
+                        ids_by.setdefault(keyof(p["name"]), set()).add(p["id"])
+                pool_dupes = {k for k, ids in ids_by.items() if len(ids) >= 2}
+                if pool_dupes:
+                    data["dupeNames"] = sorted(dupe_keys | pool_dupes)
             # per-team budget inputs: keeper count + committed 2027 salary (kept players)
             tmap = {t["team"]: {"team": t["team"], "owner": t.get("owner", ""),
                                 "keeperCount": 0, "keeperSalary2027": 0} for t in teams_out}

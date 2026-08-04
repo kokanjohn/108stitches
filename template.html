@@ -879,6 +879,29 @@ function tagBadge(t){const i=TAGINFO[t]; if(!i) return '';
 function hl(s,q){ if(!q) return esc(s); const i=s.toLowerCase().indexOf(q); if(i<0) return esc(s);
   return esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length)); }
 
+// Display-only disambiguation for players who share the EXACT same name (e.g. the two "Max Muncy").
+// On roster displays we append the MLB team abbrev ("Max Muncy LAD" / "Max Muncy ATH"). A name is a
+// KNOWN duplicate if the build flagged it (DATA.dupeNames — from the ESPN player pool + a manual
+// list) or if two rostered players currently share it. Known duplicates are tagged wherever they
+// appear on a roster, even when only one of the pair is present. This never touches the names used
+// for ESPN matching, search, sorting, filtering, or joins.
+function nkey(s){ return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,''); }
+function ambiguousNames(items){   // items:[{name,mlb}] -> Set of names shared by 2+ distinct MLB teams
+  const m=new Map();
+  items.forEach(it=>{ const k=nkey(it.name); if(!k) return;
+    const t=String(it.mlb||'').toUpperCase(); if(!t) return;
+    if(!m.has(k)) m.set(k,new Set());
+    m.get(k).add(t); });
+  const out=new Set(); m.forEach((set,k)=>{ if(set.size>=2) out.add(k); }); return out;
+}
+const KNOWN_DUPES = new Set([
+  ...((DATA.dupeNames)||[]),
+  ...ambiguousNames(DATA.records.map(r=>({name:r.player, mlb:r.mlb})))
+]);
+function teamTagged(name, mlb){   // append " <MLB>" whenever the name is a known duplicate
+  return (KNOWN_DUPES.has(nkey(name)) && mlb) ? `${name} ${mlb}` : name;
+}
+
 let view='team', sortCol='p2026', sortDir=-1;
 
 function filteredRecords(){
@@ -963,7 +986,7 @@ function renderMaster(recs,q){
     <th class="yr sortable" data-c="p2027">2027${ar('p2027')}</th>
   </tr></thead>`;
   const body=sorted.map(r=>`<tr>
-    <td class="pname">${hl(r.player,q)}</td>
+    <td class="pname">${hl(teamTagged(r.player,r.mlb),q)}</td>
     <td class="elig">${esc(r.elig||'—')}</td>
     <td class="team">${esc(r.team)}</td>
     <td class="mlb">${esc(r.mlb)}</td>
@@ -1057,7 +1080,7 @@ function rowHTML(r,q){
   const hist=YEARS.map(y=>`<td class="hist">${r.p[y]??'·'}</td>`).join('').replace(/hist">/,'hist" style="padding-left:14px">');
   return `<tr>
     <td class="l"><span class="pos">${esc(r.pos||'—')}</span></td>
-    <td class="pname">${hl(r.player,q)}${r.elig?` <span class="elig">(${esc(r.elig)})</span>`:''}</td>
+    <td class="pname">${hl(teamTagged(r.player,r.mlb),q)}${r.elig?` <span class="elig">(${esc(r.elig)})</span>`:''}</td>
     <td class="mlb">${esc(r.mlb)}</td>
     ${hist}
     <td class="cur ${costTier(r.p[2026])}">${r.p[2026]??'—'}</td>
@@ -1315,9 +1338,9 @@ $('#bars').addEventListener('keydown',e=>{
       const {slots, overflow}=assignSlots(auc.list[t.team]||[]);
       const rows=slots.map(s=>{
         const p=s.player;
-        return `<div class="ac-p slot ${p?'won':'open'}"><span class="ac-pos">${s.type}</span><span class="ac-nm">${p?esc(p.player):''}</span><span class="ac-sal">${p?'$'+p.bid:''}</span></div>`;
+        return `<div class="ac-p slot ${p?'won':'open'}"><span class="ac-pos">${s.type}</span><span class="ac-nm">${p?esc(teamTagged(p.player,p.mlb)):''}</span><span class="ac-sal">${p?'$'+p.bid:''}</span></div>`;
       }).join('');
-      const over=overflow.map(p=>`<div class="ac-p won"><span class="ac-pos">+</span><span class="ac-nm">${esc(p.player)}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
+      const over=overflow.map(p=>`<div class="ac-p won"><span class="ac-pos">+</span><span class="ac-nm">${esc(teamTagged(p.player,p.mlb))}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
       return `<div class="ac-col">
         <div class="ac-h">
           <div class="ac-tn">${esc(t.team)}</div>
