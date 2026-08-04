@@ -246,8 +246,20 @@
   .auc-shell{max-width:none;margin:0;padding:16px 20px 40px}
   .auc-body{display:flex;gap:18px;align-items:flex-start}
   .auc-main{flex:1 1 auto;min-width:0}
-  .auc-tracker{flex:0 0 292px;position:sticky;top:74px;max-height:calc(100vh - 92px);overflow:auto;
+  .auc-side{flex:0 0 292px;position:sticky;top:74px;max-height:calc(100vh - 92px);display:flex;flex-direction:column;gap:12px;min-height:0}
+  .auc-tracker{flex:0 1 auto;min-height:0;overflow:auto;
     background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 8px 12px}
+  .auc-card{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column;overflow:hidden;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+  .auc-card .cardh{font-family:"Oswald",sans-serif;font-size:13px;font-weight:600;letter-spacing:.04em;
+    color:var(--mute);text-transform:uppercase;margin:0 0 8px;flex:0 0 auto}
+  .auc-card .cardwrap{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}
+  .auc-card img.cardimg{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 3px 12px rgba(0,0,0,.2)}
+  .auc-card .cardmsg{color:var(--mute);font-size:12px;text-align:center;line-height:1.5;padding:10px}
+  .auc-card .cardspin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--stitch);border-radius:50%;animation:cardspin .8s linear infinite}
+  @keyframes cardspin{to{transform:rotate(360deg)}}
+  .auc-card a.cardlink{display:block;margin-top:8px;font-size:11px;color:var(--mute);text-align:center;text-decoration:none;flex:0 0 auto}
+  .auc-card a.cardlink:hover{color:var(--stitch);text-decoration:underline}
   .trk-head{font-family:"Oswald",sans-serif;font-size:14px;font-weight:600;letter-spacing:.04em;padding:6px 8px 10px;color:var(--ink)}
   .trk-row{display:grid;grid-template-columns:1fr 52px 52px 34px;gap:6px;align-items:center;padding:5px 8px;font-size:12px;font-variant-numeric:tabular-nums}
   .trk-row>span:not(.trk-tn){text-align:right;font-family:"Roboto Mono",monospace;color:var(--ink)}
@@ -620,7 +632,10 @@
     <div id="aucGrid" class="auc-grid"></div>
     <div id="aucStatus" class="auc-status"></div>
      </div>
-     <aside class="auc-tracker" id="aucTracker"></aside>
+     <div class="auc-side">
+       <aside class="auc-tracker" id="aucTracker"></aside>
+       <div class="auc-card" id="aucCard" aria-live="polite"></div>
+     </div>
     </div>
   </div>
 </div>
@@ -1150,7 +1165,10 @@ $('#bars').addEventListener('keydown',e=>{
   const DB="https://stitches-fd635-default-rtdb.firebaseio.com";
   const WM_PATH="winterMeetings";
   const AUCTION_PATH="auction2027";     // picks ledger
+  const CARDS_PATH="cards";             // shared cache of found card images, keyed by player id
+  const RELAY="https://espn-relay.baseball-gm.workers.dev";  // Cloudflare Worker (ESPN relay + card search)
   const BUDGET=290, ROSTER=26;
+  const cardCache={};                   // in-memory cache for this session (by id or write-in name)
   const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
   const view=document.getElementById('auctionView');
   let players=[], teams=null, selected=null;
@@ -1251,6 +1269,46 @@ $('#bars').addEventListener('keydown',e=>{
         if(line){ line.textContent=`Age ${age}`; line.style.display=''; }
       });
     }
+    loadCard(p);
+  }
+
+  /* ---- baseball card (lower-right panel) ---- */
+  function renderCard(state){
+    const box=document.getElementById('aucCard'); if(!box) return;
+    if(state==null){ box.innerHTML=`<div class="cardh">Baseball card</div><div class="cardwrap"><div class="cardmsg">Select a player to see their card.</div></div>`; return; }
+    if(state.loading){ box.innerHTML=`<div class="cardh">Baseball card</div><div class="cardwrap"><div class="cardspin"></div></div>`; return; }
+    if(state.img){
+      const link=state.link?`<a class="cardlink" href="${esc(state.link)}" target="_blank" rel="noopener">more cards ↗</a>`:'';
+      box.innerHTML=`<div class="cardh">Baseball card</div>`+
+        `<div class="cardwrap"><img class="cardimg" src="${esc(state.img)}" alt="" `+
+        `onerror="this.closest('.auc-card').querySelector('.cardwrap').innerHTML='<div class=\\'cardmsg\\'>No card image found.</div>'"></div>`+link;
+    } else {
+      const link=state.link?`<a class="cardlink" href="${esc(state.link)}" target="_blank" rel="noopener">search cards ↗</a>`:'';
+      box.innerHTML=`<div class="cardh">Baseball card</div><div class="cardwrap"><div class="cardmsg">No card found for ${esc(state.name||'this player')}.</div></div>`+link;
+    }
+  }
+  async function loadCard(p){
+    const name=(p&&p.name||'').trim();
+    const searchLink=name?`https://duckduckgo.com/?iax=images&ia=images&q=${encodeURIComponent(name+' rookie card')}`:null;
+    if(!name || name.length<3){ renderCard({img:null,name,link:searchLink}); return; }
+    const key=p.id?('id'+p.id):('nm'+name.toLowerCase());
+    // in-memory cache
+    if(key in cardCache){ if(selected===p) renderCard({...cardCache[key],name,link:cardCache[key].link||searchLink}); return; }
+    renderCard({loading:true});
+    // shared Firebase cache (only for real pool players with an id)
+    if(p.id){
+      const cached=await dbGet(`${CARDS_PATH}/${p.id}`);
+      if(cached && ('img' in cached)){ cardCache[key]=cached; if(selected===p) renderCard({...cached,name,link:cached.link||searchLink}); return; }
+    }
+    // ask the Worker to find one: query is exactly "{first} {last} rookie card"
+    let found={img:null,link:searchLink};
+    try{
+      const r=await fetch(`${RELAY}?mode=card&name=${encodeURIComponent(name)}`);
+      if(r.ok){ const j=await r.json(); if(j&&j.img) found={img:j.img,link:j.link||searchLink}; }
+    }catch(e){}
+    cardCache[key]=found;
+    if(p.id && found.img){ try{ await fetch(`${DB}/${CARDS_PATH}/${p.id}.json`,{method:'PUT',body:JSON.stringify(found)}); }catch(e){} }
+    if(selected===p) renderCard({...found,name});
   }
 
   /* ---- search ---- */
@@ -1496,6 +1554,7 @@ $('#bars').addEventListener('keydown',e=>{
     document.getElementById('aucSearch').value='';
     document.getElementById('aucBid').value='';
     const pe=document.getElementById('aucPlayer'); pe.classList.add('empty'); pe.style.background=''; pe.textContent='Search for a player to see projections.';
+    renderCard(null);
     await refresh();
     scrollToTeam(team);
     btn.disabled=false;
@@ -1527,7 +1586,7 @@ $('#bars').addEventListener('keydown',e=>{
     const small=window.innerWidth<900;
     document.getElementById('aucMobileMsg').hidden=!small;
     document.getElementById('aucBody').style.display=small?'none':'';
-    if(!small){ lastPickSig=null; refresh(); clearInterval(aucTimer); aucTimer=setInterval(refresh,5000); }
+    if(!small){ lastPickSig=null; renderCard(null); refresh(); clearInterval(aucTimer); aucTimer=setInterval(refresh,5000); }
   }
   function closeView(){ view.hidden=true; document.body.style.overflow=''; clearInterval(aucTimer); }
 
