@@ -1355,6 +1355,7 @@ $('#bars').addEventListener('keydown',e=>{
       </div>`;
     }).join('');
   }
+  let aucTimer=null, lastPickSig=null;
   async function refresh(){
     const status=document.getElementById('aucStatus'); status.textContent='Loading…';
     await loadData();
@@ -1365,6 +1366,12 @@ $('#bars').addEventListener('keydown',e=>{
     render(teams, net, auc);
     renderTracker(teams, net, auc);
     status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${teams.length} teams · keepers pending 2027 roll · updated ${new Date().toLocaleTimeString()}`;
+    // Every open device keeps its own spreadsheet: auto-export whenever the pick set changes —
+    // a pick from ANY device, caught by the poll below — not just on this device's Assign.
+    // Skips the initial load (baseline) and skips exporting an empty sheet after a full reset.
+    const sig=Object.keys(picks||{}).sort().join('|');
+    if(lastPickSig!==null && sig!==lastPickSig && sig!=='') exportPicks(picks, net);
+    lastPickSig=sig;
   }
 
   /* ---- bidding ---- */
@@ -1387,10 +1394,13 @@ $('#bars').addEventListener('keydown',e=>{
     while(used[n.toLowerCase()]){ n=s.slice(0,25)+' '+i; i++; }
     used[n.toLowerCase()]=1; return n;
   }
-  async function exportPicks(){
+  async function exportPicks(picksArg, netArg){
     if(typeof XLSX==='undefined') return;
-    const [wm, picks]=await Promise.all([dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
-    const net=wmNetOf(wm);
+    let picks=picksArg, net=netArg;
+    if(picks===undefined || net===undefined){
+      const [wm, p]=await Promise.all([dbGet(WM_PATH), dbGet(AUCTION_PATH)]);
+      net=wmNetOf(wm); picks=p;
+    }
     const all=Object.values(picks||{}).filter(p=>p&&p.team).sort((a,b)=>(a.ts||0)-(b.ts||0));
     if(!all.length) return;
     const enc=XLSX.utils.encode_cell;
@@ -1488,7 +1498,6 @@ $('#bars').addEventListener('keydown',e=>{
     const pe=document.getElementById('aucPlayer'); pe.classList.add('empty'); pe.style.background=''; pe.textContent='Search for a player to see projections.';
     await refresh();
     scrollToTeam(team);
-    await exportPicks();
     btn.disabled=false;
     flash(`Assigned ${pick.player} to ${team} for $${bid}`);
     document.getElementById('aucSearch').focus();
@@ -1518,9 +1527,9 @@ $('#bars').addEventListener('keydown',e=>{
     const small=window.innerWidth<900;
     document.getElementById('aucMobileMsg').hidden=!small;
     document.getElementById('aucBody').style.display=small?'none':'';
-    if(!small) refresh();
+    if(!small){ lastPickSig=null; refresh(); clearInterval(aucTimer); aucTimer=setInterval(refresh,5000); }
   }
-  function closeView(){ view.hidden=true; document.body.style.overflow=''; }
+  function closeView(){ view.hidden=true; document.body.style.overflow=''; clearInterval(aucTimer); }
 
   document.getElementById('auctionBtn').addEventListener('click',openView);
   document.getElementById('aucClose').addEventListener('click',closeView);
