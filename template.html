@@ -285,6 +285,9 @@
   .auc-mobile{padding:60px 20px;text-align:center;color:var(--mute);font-size:15px;line-height:1.6}
   .auc-grid{display:flex;gap:10px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
   .ac-col{flex:0 0 234px;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .ac-col.nominating{border-color:var(--stitch);box-shadow:0 0 0 2px var(--stitch),0 6px 18px rgba(0,0,0,.2)}
+  .ac-clock{background:var(--stitch);color:#fff;font-family:"Oswald",sans-serif;text-transform:uppercase;
+    font-size:11px;font-weight:700;letter-spacing:.08em;text-align:center;padding:3px 6px;border-radius:5px;margin:-2px 0 7px}
   .ac-h{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--field)}
   .ac-tn{font-family:"Oswald",sans-serif;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ac-ow{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px}
@@ -1414,16 +1417,46 @@ $('#bars').addEventListener('keydown',e=>{
        ${rows}`;
   }
   function render(tks, net, auc){
-    document.getElementById('aucGrid').innerHTML=tks.map(t=>{
+    // Nomination turn rotates left→right, one team per completed pick, SKIPPING any team that is
+    // full or can't afford a $1 bid on a new player. Replayed from the shared pick ledger so every
+    // device agrees, it advances on Assign, and undo rewinds it. -1 = nobody left (auction done).
+    const teamCount=tks.length;
+    let nomIdx=-1;
+    if(teamCount){
+      const seq=[];
+      tks.forEach(t=>(auc.list[t.team]||[]).forEach(p=>seq.push(p)));
+      seq.sort((a,b)=>((a.ts||0)-(b.ts||0)) || String(a.player).localeCompare(String(b.player)));
+      const sp={}, wo={};
+      tks.forEach(t=>{ sp[t.team]=0; wo[t.team]=0; });
+      const canNominate=(t)=>{
+        const wn=net[t.team]||0;
+        const keepers=KEEPERS_READY?(t.keeperCount||0):0;
+        const keeperSal=KEEPERS_READY?(t.keeperSalary2027||0):0;
+        const remaining=BUDGET+wn-keeperSal-sp[t.team];
+        const open=ROSTER-keepers-wo[t.team];
+        return (open>0 ? remaining-(open-1) : 0) >= 1;   // has an open slot AND can bid ≥ $1
+      };
+      const nextElig=(start)=>{ for(let k=0;k<teamCount;k++){ const i=(start+k)%teamCount; if(canNominate(tks[i])) return i; } return -1; };
+      let ptr=nextElig(0);
+      for(const pk of seq){
+        sp[pk.team]=(sp[pk.team]||0)+(pk.bid||0); wo[pk.team]=(wo[pk.team]||0)+1;
+        if(ptr<0) break;
+        ptr=nextElig((ptr+1)%teamCount);
+      }
+      nomIdx=ptr;
+    }
+    document.getElementById('aucGrid').innerHTML=tks.map((t,i)=>{
       const {remaining, open, maxBid}=computeTeam(t, net, auc);
       const {slots, overflow}=assignSlots(auc.list[t.team]||[]);
+      const onClock=(i===nomIdx);
       const rows=slots.map(s=>{
         const p=s.player;
         return `<div class="ac-p slot ${p?'won':'open'}"><span class="ac-pos">${s.type}</span><span class="ac-nm">${p?esc(teamTagged(p.player,p.mlb)):''}</span><span class="ac-sal">${p?'$'+p.bid:''}</span></div>`;
       }).join('');
       const over=overflow.map(p=>`<div class="ac-p won"><span class="ac-pos">+</span><span class="ac-nm">${esc(teamTagged(p.player,p.mlb))}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
-      return `<div class="ac-col">
+      return `<div class="ac-col${onClock?' nominating':''}">
         <div class="ac-h">
+          ${onClock?'<div class="ac-clock">Nominating</div>':''}
           <div class="ac-tn">${esc(t.team)}</div>
           <div class="ac-ow">${esc(t.owner||'')}</div>
           <div class="ac-bud">
