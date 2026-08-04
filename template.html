@@ -1426,14 +1426,14 @@ $('#bars').addEventListener('keydown',e=>{
         const t=p.team, sb=spent[t]||0, cb=count[t]||0, bid=parseFloat(p.bid)||0;
         gv=(startBudget[t]!=null?startBudget[t]:BUDGET)-sb;
         jv=(openBase[t]!=null?openBase[t]:ROSTER)-cb;
-        iv=gv-(jv-1); hv=gv-bid; kv=jv-1;
+        hv=gv-bid; kv=jv-1; iv=(kv<=0?0:hv-(kv-1));
         spent[t]=sb+bid; count[t]=cb+1;
       }
       const F=(c,f,v)=>{ const cell={t:'n',f}; if(v!==undefined)cell.v=v; A[enc({r,c})]=cell; };
       const pk={t:'n',f:`IF(B${rr}="","",ROW()-1)`}; if(p) pk.v=i+1; A[enc({r,c:0})]=pk;
       F(6,`IF(C${rr}="","",IFERROR(VLOOKUP(C${rr},Setup!$A:$C,2,0),${BUDGET})-SUMIFS($D$2:$D$${MAX},$C$2:$C$${MAX},C${rr},$A$2:$A$${MAX},"<"&A${rr}))`, gv);
       F(7,`IF(C${rr}="","",G${rr}-D${rr})`, hv);
-      F(8,`IF(C${rr}="","",G${rr}-(J${rr}-1))`, iv);
+      F(8,`IF(C${rr}="","",IF(K${rr}<=0,0,H${rr}-(K${rr}-1)))`, iv);
       F(9,`IF(C${rr}="","",IFERROR(VLOOKUP(C${rr},Setup!$A:$C,3,0),${ROSTER})-COUNTIFS($C$2:$C$${MAX},C${rr},$A$2:$A$${MAX},"<"&A${rr}))`, jv);
       F(10,`IF(C${rr}="","",J${rr}-1)`, kv);
     }
