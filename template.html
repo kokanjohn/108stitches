@@ -1577,7 +1577,7 @@ setView(prefs.view==='master'?'master':'team');
     payEl.innerHTML=s.payout.map(p=>{
       const bits=[];
       if(p.cats) bits.push(`${p.cats} cat${p.cats===1?'':'s'}`);
-      if(p.record) bits.push('best record');
+      if(p.record) bits.push('record');
       return `<div class="pay-row">
       <div class="pay-team">${esc(p.team)}</div>
       <div class="pay-track"><div class="pay-fill" style="width:${max?(p.earned/max*100).toFixed(1):0}%"></div></div>
