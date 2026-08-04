@@ -1165,7 +1165,8 @@ $('#bars').addEventListener('keydown',e=>{
   const DB="https://stitches-fd635-default-rtdb.firebaseio.com";
   const WM_PATH="winterMeetings";
   const AUCTION_PATH="auction2027";     // picks ledger
-  const CARDS_PATH="cards";             // shared cache of found card images, keyed by player id
+  const CARDS_PATH="cards_v2";          // shared cache of found card images, keyed by player id
+                                        // (bump this suffix anytime to ignore all previously cached images)
   const RELAY="https://espn-relay.baseball-gm.workers.dev";  // Cloudflare Worker (ESPN relay + card search)
   const BUDGET=290, ROSTER=26;
   const cardCache={};                   // in-memory cache for this session (by id or write-in name)
