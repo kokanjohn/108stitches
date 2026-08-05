@@ -743,6 +743,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 <script>
 const DATA = /*__DATA__*/;
 const $ = s => document.querySelector(s);
@@ -1633,8 +1634,52 @@ $('#bars').addEventListener('keydown',e=>{
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trows), sheetName(tm.team, used));
     });
 
-    wb.Workbook={CalcPr:{fullCalcOnLoad:true}};
-    XLSX.writeFile(wb, `108-auction-pick-${String(all.length).padStart(3,'0')}.xlsx`);
+    // ---- Lists: hidden source for the Player/Team dropdowns on the Auction tab ----
+    const playerNames=[...new Set((players||[]).map(p=>p&&p.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const teamNames=(teams||[]).map(t=>t.team);
+    const listRows=[['Players','Teams']];
+    const maxLen=Math.max(playerNames.length, teamNames.length);
+    for(let i=0;i<maxLen;i++) listRows.push([playerNames[i]||'', teamNames[i]||'']);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(listRows), 'Lists');
+
+    const listsIdx=wb.SheetNames.indexOf('Lists');
+    wb.Workbook={CalcPr:{fullCalcOnLoad:true}, Sheets:wb.SheetNames.map((n,i)=>({Hidden:i===listsIdx?1:0}))};
+    const fname=`108-auction-pick-${String(all.length).padStart(3,'0')}.xlsx`;
+    // Add Player/Team dropdowns by post-processing the file (SheetJS community can't write them).
+    // If anything in that path fails, fall back to the plain — but fully working — export.
+    try{
+      const blob=xlsxWithDropdowns(wb, nRows+1, playerNames.length, teamNames.length);
+      const url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download=fname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1500);
+    }catch(e){ XLSX.writeFile(wb, fname); }
+  }
+  // Inject list data-validations (Player=col B, Team=col C) into the Auction sheet after the
+  // workbook is serialized. Ranges point at the hidden Lists sheet; write-ins are allowed
+  // (showErrorMessage=0). XML shape verified against Excel's own output.
+  function xlsxWithDropdowns(wb, lastRow, nPlayers, nTeams){
+    if(typeof fflate==='undefined') throw new Error('fflate missing');
+    const buf=new Uint8Array(XLSX.write(wb,{type:'array',bookType:'xlsx'}));
+    const files=fflate.unzipSync(buf);
+    const dec=new TextDecoder(), en=new TextEncoder();
+    const wbx=dec.decode(files['xl/workbook.xml']);
+    const sheetEl=wbx.match(/<sheet\b[^>]*name="Auction"[^>]*\/>/);
+    if(!sheetEl) throw new Error('no Auction sheet');
+    const rid=(sheetEl[0].match(/r:id="([^"]+)"/)||[])[1];
+    const rels=dec.decode(files['xl/_rels/workbook.xml.rels']);
+    const relEl=rels.match(new RegExp('<Relationship\\b[^>]*Id="'+rid+'"[^>]*/>'));
+    if(!relEl) throw new Error('no rel');
+    let target=(relEl[0].match(/Target="([^"]+)"/)||[])[1];
+    if(!target) throw new Error('no target');
+    target='xl/'+target.replace(/^\//,'').replace(/^xl\//,'');
+    let sx=dec.decode(files[target]);
+    if(sx.indexOf('</sheetData>')<0) throw new Error('no sheetData');
+    const dv=`<dataValidations count="2">`+
+      `<dataValidation sqref="B2:B${lastRow}" showDropDown="0" showInputMessage="0" showErrorMessage="0" allowBlank="1" type="list"><formula1>Lists!$A$2:$A$${nPlayers+1}</formula1></dataValidation>`+
+      `<dataValidation sqref="C2:C${lastRow}" showDropDown="0" showInputMessage="0" showErrorMessage="0" allowBlank="1" type="list"><formula1>Lists!$B$2:$B$${nTeams+1}</formula1></dataValidation>`+
+      `</dataValidations>`;
+    files[target]=en.encode(sx.replace('</sheetData>','</sheetData>'+dv));
+    return new Blob([fflate.zipSync(files)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   }
   async function assign(){
     if(!selected){ flash('Pick a player first'); return; }
