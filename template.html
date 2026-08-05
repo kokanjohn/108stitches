@@ -263,6 +263,23 @@
   .card-modal img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
   .card-modal-x{position:absolute;top:14px;right:22px;background:none;border:none;color:#fff;font-size:40px;line-height:1;cursor:pointer;opacity:.85}
   .card-modal-x:hover{opacity:1}
+  .ac-p.won{cursor:grab}
+  .ac-p.won:hover{background:var(--field)}
+  .ac-p.dragover{outline:2px dashed var(--stitch);outline-offset:-2px;background:var(--field)}
+  .edit-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:210;padding:20px}
+  .edit-modal[hidden]{display:none}
+  .edit-sheet{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:320px;max-width:92vw;padding:18px}
+  .edit-h{font-family:"Oswald",sans-serif;font-size:16px;font-weight:600;letter-spacing:.02em;margin-bottom:4px}
+  .edit-pname{font-size:13px;color:var(--mute);margin-bottom:14px}
+  .edit-l{display:block;font-size:12px;color:var(--mute);margin-bottom:12px}
+  .edit-l input,.edit-l select{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;font-size:14px;
+    border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}
+  .edit-btns{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .edit-spacer{flex:1}
+  .edit-btns button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+  .edit-save{background:var(--stitch)!important;border-color:var(--stitch)!important;color:#fff!important;font-weight:600}
+  .edit-remove{color:var(--warn)!important;border-color:var(--warn)!important}
+  .edit-btns button:hover{filter:brightness(1.05)}
   .auc-card .cardmsg{color:var(--mute);font-size:12px;text-align:center;line-height:1.5;padding:10px}
   .auc-card .cardspin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--stitch);border-radius:50%;animation:cardspin .8s linear infinite}
   @keyframes cardspin{to{transform:rotate(360deg)}}
@@ -286,8 +303,6 @@
   .auc-grid{display:flex;gap:10px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
   .ac-col{flex:0 0 234px;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .ac-col.nominating{border-color:var(--stitch);box-shadow:0 0 0 2px var(--stitch),0 6px 18px rgba(0,0,0,.2)}
-  .ac-clock{background:var(--stitch);color:#fff;font-family:"Oswald",sans-serif;text-transform:uppercase;
-    font-size:11px;font-weight:700;letter-spacing:.08em;text-align:center;padding:3px 6px;border-radius:5px;margin:-2px 0 7px}
   .ac-h{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--field)}
   .ac-tn{font-family:"Oswald",sans-serif;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ac-ow{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px}
@@ -654,6 +669,21 @@
 <div class="card-modal" id="cardModal" hidden>
   <button class="card-modal-x" id="cardModalX" aria-label="Close">&times;</button>
   <img id="cardModalImg" src="" alt="Baseball card (enlarged)">
+</div>
+
+<div class="edit-modal" id="editModal" hidden>
+  <div class="edit-sheet">
+    <div class="edit-h">Edit pick</div>
+    <div class="edit-pname" id="editPname"></div>
+    <label class="edit-l">Winning bid ($)<input type="number" id="editBid" min="1" step="1" inputmode="numeric"></label>
+    <label class="edit-l">Team<select id="editTeam"></select></label>
+    <div class="edit-btns">
+      <button class="edit-remove" id="editRemove">Remove</button>
+      <span class="edit-spacer"></span>
+      <button class="edit-cancel" id="editCancel">Cancel</button>
+      <button class="edit-save" id="editSave">Save</button>
+    </div>
+  </div>
 </div>
 
 <div class="modal" id="stdModal" role="dialog" aria-modal="true" aria-label="Category Standings" hidden>
@@ -1187,7 +1217,7 @@ $('#bars').addEventListener('keydown',e=>{
   const cardCache={};                   // in-memory cache for this session (by id or write-in name)
   const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
   const view=document.getElementById('auctionView');
-  let players=[], teams=null, selected=null;
+  let players=[], teams=null, selected=null, picksNow={}, dragKey=null;
 
   async function loadData(){
     if(teams) return;
@@ -1208,11 +1238,12 @@ $('#bars').addEventListener('keydown',e=>{
   }
   function auctionOf(picks){
     const spent={}, won={}, list={};
-    Object.values(picks||{}).forEach(p=>{
+    Object.entries(picks||{}).forEach(([k,p])=>{
       if(!p||!p.team) return;
-      spent[p.team]=(spent[p.team]||0)+(parseFloat(p.bid)||0);
-      won[p.team]=(won[p.team]||0)+1;
-      (list[p.team]=list[p.team]||[]).push(p);
+      const pk={...p,_key:k};
+      spent[pk.team]=(spent[pk.team]||0)+(parseFloat(pk.bid)||0);
+      won[pk.team]=(won[pk.team]||0)+1;
+      (list[pk.team]=list[pk.team]||[]).push(pk);
     });
     return {spent, won, list};
   }
@@ -1335,7 +1366,7 @@ $('#bars').addEventListener('keydown',e=>{
     const img=e.target.closest('.cardimg'); if(img) openCardModal(img.getAttribute('src'));
   });
   document.getElementById('cardModal').addEventListener('click', e=>{ if(e.target.id==='cardModal'||e.target.id==='cardModalX') closeCardModal(); });
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !document.getElementById('cardModal').hidden) closeCardModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !document.getElementById('cardModal').hidden){ closeCardModal(); e.stopImmediatePropagation(); } });
 
   /* ---- search ---- */
   function runSearch(){
@@ -1380,7 +1411,16 @@ $('#bars').addEventListener('keydown',e=>{
   }
   function assignSlots(picks){
     const slots=ROSTER_TEMPLATE.map(type=>({type,player:null})), overflow=[];
-    picks.slice().sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(pk=>{
+    const arr=picks.slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+    const pinned=[], auto=[];
+    arr.forEach(pk=>{
+      const s=(pk.slot!=null && pk.slot!=='')?parseInt(pk.slot,10):NaN;
+      if(Number.isInteger(s) && s>=0 && s<slots.length) pinned.push({pk,s}); else auto.push(pk);
+    });
+    // pass 1: honor manual pins (earliest ts wins a contested slot; loser falls to auto-fill)
+    pinned.forEach(({pk,s})=>{ if(!slots[s].player) slots[s].player=pk; else auto.push(pk); });
+    // pass 2: auto-fill everything else greedily by position priority
+    auto.forEach(pk=>{
       const pos=parsePos(pk.pos); let placed=false;
       for(const type of FILL_PRIORITY){
         if(!accepts(type,pos)) continue;
@@ -1449,14 +1489,14 @@ $('#bars').addEventListener('keydown',e=>{
       const {remaining, open, maxBid}=computeTeam(t, net, auc);
       const {slots, overflow}=assignSlots(auc.list[t.team]||[]);
       const onClock=(i===nomIdx);
-      const rows=slots.map(s=>{
+      const rows=slots.map((s,si)=>{
         const p=s.player;
-        return `<div class="ac-p slot ${p?'won':'open'}"><span class="ac-pos">${s.type}</span><span class="ac-nm">${p?esc(teamTagged(p.player,p.mlb)):''}</span><span class="ac-sal">${p?'$'+p.bid:''}</span></div>`;
+        if(p) return `<div class="ac-p slot won" draggable="true" data-key="${esc(p._key||'')}" data-slot="${si}" data-team="${esc(t.team)}" title="Click to edit · drag to move"><span class="ac-pos">${s.type}</span><span class="ac-nm">${esc(teamTagged(p.player,p.mlb))}</span><span class="ac-sal">$${p.bid}</span></div>`;
+        return `<div class="ac-p slot open" data-slot="${si}" data-team="${esc(t.team)}"><span class="ac-pos">${s.type}</span><span class="ac-nm"></span><span class="ac-sal"></span></div>`;
       }).join('');
-      const over=overflow.map(p=>`<div class="ac-p won"><span class="ac-pos">+</span><span class="ac-nm">${esc(teamTagged(p.player,p.mlb))}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
+      const over=overflow.map(p=>`<div class="ac-p won ovf" draggable="true" data-key="${esc(p._key||'')}" data-slot="-1" data-team="${esc(t.team)}" title="Click to edit · drag to a slot"><span class="ac-pos">+</span><span class="ac-nm">${esc(teamTagged(p.player,p.mlb))}</span><span class="ac-sal">$${p.bid}</span></div>`).join('');
       return `<div class="ac-col${onClock?' nominating':''}">
         <div class="ac-h">
-          ${onClock?'<div class="ac-clock">Nominating</div>':''}
           <div class="ac-tn">${esc(t.team)}</div>
           <div class="ac-ow">${esc(t.owner||'')}</div>
           <div class="ac-bud">
@@ -1477,14 +1517,15 @@ $('#bars').addEventListener('keydown',e=>{
     if(!teams||!teams.length){ status.textContent='Could not load team data (auction-players.json). Run the build, then reopen.'; return; }
     fillWinners(teams);
     const net=wmNetOf(wm), auc=auctionOf(picks);
+    picksNow=picks||{};
     render(teams, net, auc);
     renderTracker(teams, net, auc);
     status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${teams.length} teams · keepers pending 2027 roll · updated ${new Date().toLocaleTimeString()}`;
-    // Every open device keeps its own spreadsheet: auto-export whenever the pick set changes —
-    // a pick from ANY device, caught by the poll below — not just on this device's Assign.
-    // Skips the initial load (baseline) and skips exporting an empty sheet after a full reset.
-    const sig=Object.keys(picks||{}).sort().join('|');
-    if(lastPickSig!==null && sig!==lastPickSig && sig!=='') exportPicks(picks, net);
+    // Every open device keeps its own spreadsheet: auto-export whenever the picks change —
+    // a new pick, an edited bid/team, a moved slot, or a removal from ANY device — not just
+    // this device's Assign. Skips the initial load (baseline) and an empty sheet after a reset.
+    const sig=Object.entries(picks||{}).map(([k,p])=>`${k}:${p&&p.bid}:${p&&p.team}:${p&&p.slot!=null?p.slot:''}`).sort().join('|');
+    if(lastPickSig!==null && sig!==lastPickSig && Object.keys(picks||{}).length) exportPicks(picks, net);
     lastPickSig=sig;
   }
 
@@ -1585,9 +1626,10 @@ $('#bars').addEventListener('keydown',e=>{
     // ---- per-team roster snapshots (position slots; static as of this download) ----
     const used={};
     (teams||[]).forEach(tm=>{
-      const {slots}=assignSlots(all.filter(p=>p.team===tm.team));
+      const {slots, overflow}=assignSlots(all.filter(p=>p.team===tm.team));
       const trows=[['Slot','Player','Bid']];
       slots.forEach(s=>trows.push([s.type, s.player?s.player.player:'', s.player?(parseFloat(s.player.bid)||0):'']));
+      overflow.forEach(p=>trows.push(['OVERFLOW', p.player, parseFloat(p.bid)||0]));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trows), sheetName(tm.team, used));
     });
 
@@ -1646,6 +1688,73 @@ $('#bars').addEventListener('keydown',e=>{
   }
   function closeView(){ view.hidden=true; document.body.style.overflow=''; clearInterval(aucTimer); }
 
+  /* ---- edit an assigned pick (bid / team / remove) ---- */
+  let editKey=null;
+  function openEdit(key){
+    const p=picksNow[key]; if(!p) return;
+    editKey=key;
+    document.getElementById('editPname').textContent=`${p.player} · $${p.bid} · ${p.team}`;
+    document.getElementById('editBid').value=parseInt(p.bid,10)||'';
+    document.getElementById('editTeam').innerHTML=(teams||[]).map(t=>`<option value="${esc(t.team)}"${t.team===p.team?' selected':''}>${esc(t.team)}</option>`).join('');
+    document.getElementById('editModal').hidden=false;
+    document.getElementById('editBid').focus();
+  }
+  function closeEdit(){ document.getElementById('editModal').hidden=true; editKey=null; }
+  async function saveEdit(){
+    if(!editKey) return;
+    const bid=parseInt(document.getElementById('editBid').value,10);
+    const team=document.getElementById('editTeam').value;
+    if(!(bid>=1)){ flash('Bid must be $1 or more'); return; }
+    if(!team){ flash('Choose a team'); return; }
+    const prev=picksNow[editKey]||{};
+    const patch={bid, team};
+    if(prev.team && prev.team!==team) patch.slot=null;   // moving teams clears the manual slot pin
+    try{ const r=await fetch(`${DB}/${AUCTION_PATH}/${editKey}.json`,{method:'PATCH',body:JSON.stringify(patch)}); if(!r.ok) throw 0; }
+    catch(e){ flash('Could not save edit'); return; }
+    const nm=prev.player||'pick'; closeEdit(); await refresh(); flash(`Updated ${nm}`);
+  }
+  async function removeEdit(){
+    if(!editKey) return;
+    const p=picksNow[editKey];
+    if(!confirm(`Remove ${p?p.player:'this pick'}${p?' ($'+p.bid+') from '+p.team:''}?`)) return;
+    try{ const r=await fetch(`${DB}/${AUCTION_PATH}/${editKey}.json`,{method:'DELETE'}); if(!r.ok) throw 0; }
+    catch(e){ flash('Could not remove'); return; }
+    const nm=p?p.player:'pick'; closeEdit(); await refresh(); flash(`Removed ${nm}`);
+  }
+
+  /* ---- drag a player onto a roster slot (manual slot override) ---- */
+  function dropOk(cell){
+    const p=dragKey?picksNow[dragKey]:null; if(!p) return false;
+    if(p.team!==cell.getAttribute('data-team')) return false;   // moves stay within the same team
+    const si=parseInt(cell.getAttribute('data-slot'),10);
+    if(!(si>=0)) return false;                                  // overflow zone isn't a drop target
+    const type=ROSTER_TEMPLATE[si];
+    return accepts(type, parsePos(p.pos)) || type==='BE';       // only eligible slots (or bench)
+  }
+  async function handleDrop(key, cell){
+    const si=parseInt(cell.getAttribute('data-slot'),10);
+    const p=picksNow[key]; if(!p || !(si>=0)) return;
+    const updates={}; updates[`${key}/slot`]=si;
+    // un-pin whoever was manually pinned to this slot on this team (they fall back to auto-fill)
+    Object.entries(picksNow).forEach(([k,q])=>{ if(k!==key && q && q.team===p.team && Number(q.slot)===si) updates[`${k}/slot`]=null; });
+    try{ const r=await fetch(`${DB}/${AUCTION_PATH}.json`,{method:'PATCH',body:JSON.stringify(updates)}); if(!r.ok) throw 0; }
+    catch(e){ flash('Could not move player'); return; }
+    await refresh();
+  }
+  const grid=document.getElementById('aucGrid');
+  grid.addEventListener('click', e=>{ const row=e.target.closest('.ac-p.won'); if(row){ const k=row.getAttribute('data-key'); if(k) openEdit(k); } });
+  grid.addEventListener('dragstart', e=>{ const row=e.target.closest('.ac-p.won'); if(!row){ return; } dragKey=row.getAttribute('data-key'); if(e.dataTransfer){ e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain', dragKey); }catch(_){} } });
+  grid.addEventListener('dragend', ()=>{ dragKey=null; grid.querySelectorAll('.ac-p.dragover').forEach(x=>x.classList.remove('dragover')); });
+  grid.addEventListener('dragover', e=>{ const cell=e.target.closest('.ac-p.slot'); if(cell && dragKey && dropOk(cell)){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='move'; cell.classList.add('dragover'); } });
+  grid.addEventListener('dragleave', e=>{ const cell=e.target.closest('.ac-p.slot'); if(cell) cell.classList.remove('dragover'); });
+  grid.addEventListener('drop', e=>{ const cell=e.target.closest('.ac-p.slot'); if(cell && dragKey && dropOk(cell)){ e.preventDefault(); cell.classList.remove('dragover'); handleDrop(dragKey, cell); } });
+  document.getElementById('editSave').addEventListener('click', saveEdit);
+  document.getElementById('editCancel').addEventListener('click', closeEdit);
+  document.getElementById('editRemove').addEventListener('click', removeEdit);
+  document.getElementById('editBid').addEventListener('keydown', e=>{ if(e.key==='Enter') saveEdit(); });
+  document.getElementById('editModal').addEventListener('click', e=>{ if(e.target.id==='editModal') closeEdit(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !document.getElementById('editModal').hidden){ closeEdit(); e.stopImmediatePropagation(); } });
+
   document.getElementById('auctionBtn').addEventListener('click',openView);
   document.getElementById('aucClose').addEventListener('click',closeView);
   document.getElementById('aucRefresh').addEventListener('click',refresh);
@@ -1658,6 +1767,7 @@ $('#bars').addEventListener('keydown',e=>{
   document.addEventListener('click',e=>{ if(!e.target.closest('.ac-search')){ const b=document.getElementById('aucResults'); if(b) b.hidden=true; } });
   document.addEventListener('keydown',e=>{
     if(e.key!=='Escape'||view.hidden) return;
+    if(!document.getElementById('editModal').hidden || !document.getElementById('cardModal').hidden) return;
     const b=document.getElementById('aucResults');
     if(b && !b.hidden){ b.hidden=true; } else closeView();
   });
