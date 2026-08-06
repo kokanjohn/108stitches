@@ -111,10 +111,42 @@
   .modal-body li{margin:0 0 12px;line-height:1.5;color:var(--ink);font-size:14.5px}
   .modal-body li::marker{color:var(--mute)}
 
-  /* Winter Meetings tracker */
-  .wm-launch{display:flex;justify-content:center;padding:6px 0 40px}
-  .wm-launch-col{display:flex;flex-direction:column;gap:12px;align-items:stretch}
-  #wmBtn,#stdBtn,#auctionBtn{font-size:16px;padding:15px 30px;letter-spacing:.06em;width:100%;white-space:nowrap}
+  /* ---- bottom nav bar + junk drawer ---- */
+  :root{--nav-h:calc(58px + env(safe-area-inset-bottom,0px))}
+  body{padding-bottom:var(--nav-h)}
+  .modal{padding-bottom:var(--nav-h)}
+  .snav{position:fixed;left:0;right:0;bottom:0;z-index:150;display:flex;
+    background:var(--field);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -3px 14px rgba(0,0,0,.22)}
+  .snav>button{flex:1 1 0;min-width:0;background:none;border:0;cursor:pointer;position:relative;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    padding:9px 4px 8px;color:var(--mute);
+    font:700 10.5px/1 "Oswald",sans-serif;letter-spacing:.06em;text-transform:uppercase;
+    transition:color .15s}
+  .snav>button svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .snav .snav-lab{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .snav>button:hover{color:var(--ink)}
+  .snav>button.active{color:var(--warn)}
+  .snav>button.active::before{content:"";position:absolute;top:0;left:22%;right:22%;height:3px;border-radius:0 0 3px 3px;background:var(--warn)}
+  @media (min-width:900px){ body.auction-open .snav{display:none} }
+
+  .junkview{position:fixed;left:0;right:0;top:0;bottom:var(--nav-h);z-index:90;
+    background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .junkview[hidden]{display:none}
+  .junkview-in{max-width:640px;margin:0 auto;padding:28px 20px 40px}
+  .junkview h2{font:700 clamp(26px,7vw,34px)/1 "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.02em;margin:0;color:var(--ink)}
+  .junkview .jd-sub{color:var(--mute);font-size:13.5px;margin:6px 0 24px}
+  .jd-list{display:flex;flex-direction:column;gap:12px}
+  .jd-item{display:flex;align-items:center;gap:15px;width:100%;text-align:left;cursor:pointer;
+    background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px;
+    color:var(--ink);transition:border-color .15s,transform .05s}
+  .jd-item:hover{border-color:var(--mute)}
+  .jd-item:active{transform:scale(.995)}
+  .jd-ico{flex:0 0 auto;width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--mute)}
+  .jd-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+  .jd-t{font:700 15.5px/1.2 "Oswald",sans-serif;letter-spacing:.01em;text-transform:uppercase}
+  .jd-d{color:var(--mute);font-size:12.5px;margin-top:3px}
+  .jd-chev{flex:0 0 auto;width:19px;height:19px;fill:none;stroke:var(--mute);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .std-pool{text-align:center;padding:6px 0 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
   .std-pool .lab{color:var(--mute);font:600 11px "Oswald",sans-serif;letter-spacing:.09em;text-transform:uppercase}
   .std-pool .amt{font:700 clamp(30px,8vw,44px)/1 "Oswald",sans-serif;color:var(--stitch);display:block;margin:6px 0 2px}
@@ -476,10 +508,6 @@
 <header class="mast"><div class="wrap">
   <div class="topbar">
     <h1 class="title">108 Stitches</h1>
-    <div class="topbar-actions">
-      <button class="btn rules-btn" id="rulesBtn">League Rules</button>
-      <button class="btn icon-btn" id="setBtn" aria-label="Settings" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-    </div>
   </div>
   <p class="leadin" id="tagline"></p>
 </div></header>
@@ -623,11 +651,6 @@
   <span id="livelegend"></span>
 </div></footer>
 
-<div class="wm-launch"><div class="wm-launch-col">
-  <button class="btn" id="stdBtn">Category Standings</button>
-  <button class="btn" id="wmBtn">Winter Meetings Cash Tracker</button>
-  <button class="btn" id="auctionBtn">Live Auction Tool</button>
-</div></div>
 
 <div id="auctionView" hidden>
   <div class="auc-shell">
@@ -690,7 +713,6 @@
   <div class="modal-sheet">
     <div class="modal-head">
       <h2>Category Standings</h2>
-      <button class="modal-x" id="stdClose" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <div class="std-pool" id="stdPool"></div>
@@ -833,7 +855,7 @@ document.addEventListener('click',e=>{
   const modal=document.getElementById('rulesModal');
   const open=()=>{modal.hidden=false;document.body.style.overflow='hidden';};
   const close=()=>{modal.hidden=true;document.body.style.overflow='';};
-  document.getElementById('rulesBtn').addEventListener('click',open);
+  window.SCREENS=window.SCREENS||{}; window.SCREENS.openRules=open; window.SCREENS.closeRules=close;
   document.getElementById('rulesClose').addEventListener('click',close);
   modal.addEventListener('click',e=>{if(e.target===modal)close();});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!modal.hidden)close();});
@@ -844,7 +866,7 @@ document.addEventListener('click',e=>{
   const modal=document.getElementById('setModal');
   const open=()=>{ syncPrefUI(); modal.hidden=false; document.body.style.overflow='hidden'; };
   const close=()=>{ modal.hidden=true; document.body.style.overflow=''; };
-  document.getElementById('setBtn').addEventListener('click',open);
+  window.SCREENS=window.SCREENS||{}; window.SCREENS.openSettings=open; window.SCREENS.closeSettings=close;
   document.getElementById('setClose').addEventListener('click',close);
   modal.addEventListener('click',e=>{ if(e.target===modal) close(); });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!modal.hidden) close(); });
@@ -1725,13 +1747,13 @@ $('#bars').addEventListener('keydown',e=>{
   }
 
   function openView(){
-    view.hidden=false; document.body.style.overflow='hidden';
+    view.hidden=false; document.body.style.overflow='hidden'; document.body.classList.add('auction-open');
     const small=window.innerWidth<900;
     document.getElementById('aucMobileMsg').hidden=!small;
     document.getElementById('aucBody').style.display=small?'none':'';
     if(!small){ lastPickSig=null; renderCard(null); refresh(); clearInterval(aucTimer); aucTimer=setInterval(refresh,5000); }
   }
-  function closeView(){ view.hidden=true; document.body.style.overflow=''; clearInterval(aucTimer); }
+  function closeView(){ view.hidden=true; document.body.style.overflow=''; document.body.classList.remove('auction-open'); clearInterval(aucTimer); }
 
   /* ---- edit an assigned pick (bid / team / remove) ---- */
   let editKey=null;
@@ -1800,7 +1822,7 @@ $('#bars').addEventListener('keydown',e=>{
   document.getElementById('editModal').addEventListener('click', e=>{ if(e.target.id==='editModal') closeEdit(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !document.getElementById('editModal').hidden){ closeEdit(); e.stopImmediatePropagation(); } });
 
-  document.getElementById('auctionBtn').addEventListener('click',openView);
+  window.SCREENS=window.SCREENS||{}; window.SCREENS.openAuction=openView; window.SCREENS.closeAuction=closeView;
   document.getElementById('aucClose').addEventListener('click',closeView);
   document.getElementById('aucRefresh').addEventListener('click',refresh);
   document.getElementById('aucUndo').addEventListener('click',undoLast);
@@ -1883,10 +1905,9 @@ setView(prefs.view==='master'?'master':'team');
   build();
   function openM(){ modal.hidden=false; document.body.style.overflow='hidden'; }
   function closeM(){ modal.hidden=true; document.body.style.overflow=''; }
-  document.getElementById('stdBtn').addEventListener('click',openM);
-  document.getElementById('stdClose').addEventListener('click',closeM);
-  modal.addEventListener('click',e=>{ if(e.target===modal) closeM(); });
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!modal.hidden) closeM(); });
+  window.SCREENS=window.SCREENS||{}; window.SCREENS.openStandings=openM; window.SCREENS.closeStandings=closeM;
+  modal.addEventListener('click',e=>{ if(e.target===modal && window.NAV) window.NAV.goHome(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!modal.hidden && window.NAV) window.NAV.goHome(); });
 })();
 (function(){
   const DB = "https://stitches-fd635-default-rtdb.firebaseio.com";
@@ -1994,10 +2015,83 @@ setView(prefs.view==='master'?'master':'team');
 
   function openM(){ modal.hidden=false; document.body.style.overflow='hidden'; load(); pollTimer=setInterval(load,5000); }
   function closeM(){ modal.hidden=true; document.body.style.overflow=''; editingId=null; clearInterval(pollTimer); }
-  document.getElementById('wmBtn').addEventListener('click',openM);
+  window.SCREENS=window.SCREENS||{}; window.SCREENS.openWM=openM; window.SCREENS.closeWM=closeM;
   document.getElementById('wmClose').addEventListener('click',closeM);
   modal.addEventListener('click',e=>{ if(e.target===modal) closeM(); });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!modal.hidden) closeM(); });
+})();
+</script>
+<nav class="snav" role="navigation" aria-label="Main">
+  <button id="navHome" type="button" aria-label="Team Salaries">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18"/><path d="M6 21V9l6-5 6 5v12"/><path d="M10 21v-6h4v6"/></svg>
+    <span class="snav-lab">Team Salaries</span>
+  </button>
+  <button id="navStd" type="button" aria-label="Category Standings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M2 20h20"/></svg>
+    <span class="snav-lab">Standings</span>
+  </button>
+  <button id="navJunk" type="button" aria-label="Junk Drawer">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M10 7.5h4"/><path d="M10 16.5h4"/></svg>
+    <span class="snav-lab">Junk Drawer</span>
+  </button>
+</nav>
+<div class="junkview" id="junkView" hidden>
+  <div class="junkview-in">
+    <h2>Junk Drawer</h2>
+    <p class="jd-sub">Extra tools and league info.</p>
+    <div class="jd-list">
+      <button class="jd-item" id="jrWM" type="button">
+        <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
+        <span class="jd-txt"><span class="jd-t">Winter Meetings Cash Tracker</span><span class="jd-d">Shared live cash ledger</span></span>
+        <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="jd-item" id="jrAuction" type="button">
+        <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3l7 7"/><path d="M5 21l9-9"/><path d="M9 8l7 7"/><path d="M3 21h6"/></svg>
+        <span class="jd-txt"><span class="jd-t">Live Auction Tool</span><span class="jd-d">Draft-day auction board</span></span>
+        <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="jd-item" id="jrRules" type="button">
+        <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4z"/><path d="M14 4v5h5"/><path d="M8 13h8M8 17h5"/></svg>
+        <span class="jd-txt"><span class="jd-t">League Rules</span><span class="jd-d">Keeper &amp; auction rules</span></span>
+        <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="jd-item" id="jrSettings" type="button">
+        <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="jd-txt"><span class="jd-t">Settings</span><span class="jd-d">Theme, default view &amp; install</span></span>
+        <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+<script>
+/* ---- bottom-nav controller ---- */
+(function(){
+  var S = window.SCREENS || (window.SCREENS = {});
+  var junk = document.getElementById('junkView');
+  var tabHome = document.getElementById('navHome');
+  var tabStd  = document.getElementById('navStd');
+  var tabJunk = document.getElementById('navJunk');
+  function setActive(name){
+    tabHome.classList.toggle('active', name==='home');
+    tabStd.classList.toggle('active',  name==='standings');
+    tabJunk.classList.toggle('active', name==='junk');
+  }
+  function closeSubs(){ if(S.closeWM)S.closeWM(); if(S.closeRules)S.closeRules(); if(S.closeSettings)S.closeSettings(); if(S.closeAuction)S.closeAuction(); }
+  function showJunk(){ junk.hidden=false; document.body.style.overflow='hidden'; }
+  function hideJunk(){ junk.hidden=true; }
+  function goHome(){ if(S.closeStandings)S.closeStandings(); closeSubs(); hideJunk(); document.body.style.overflow=''; setActive('home'); }
+  function goStandings(){ hideJunk(); closeSubs(); if(S.openStandings)S.openStandings(); setActive('standings'); }
+  function goJunk(){ if(S.closeStandings)S.closeStandings(); closeSubs(); showJunk(); setActive('junk'); }
+  window.NAV = { goHome:goHome, goStandings:goStandings, goJunk:goJunk };
+  tabHome.addEventListener('click', goHome);
+  tabStd.addEventListener('click', goStandings);
+  tabJunk.addEventListener('click', goJunk);
+  var rowMap = { jrWM:'openWM', jrAuction:'openAuction', jrRules:'openRules', jrSettings:'openSettings' };
+  Object.keys(rowMap).forEach(function(id){
+    var b = document.getElementById(id);
+    if(b) b.addEventListener('click', function(){ var fn = window.SCREENS[rowMap[id]]; if(fn) fn(); });
+  });
+  setActive('home');
 })();
 </script>
 </body>
