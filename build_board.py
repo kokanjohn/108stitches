@@ -526,9 +526,9 @@ def build():
     from datetime import datetime, timezone
     try:
         from zoneinfo import ZoneInfo
-        built_at = datetime.now(ZoneInfo("America/New_York")).strftime("%b %d, %Y · %I:%M %p %Z")
+        built_at = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%y · %-I:%M %p")
     except Exception:
-        built_at = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
+        built_at = datetime.now(timezone.utc).strftime("%m/%d/%y · %-I:%M %p")
     records, teams, live = draft_records, team_meta(draft_records), False
     stale = False; snapshot_at = ""; standings = None
     live_error = live_hint = target = ""
