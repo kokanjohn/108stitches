@@ -40,6 +40,10 @@ AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
+EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip for ONE live GitHub build,
+                              # then flip back): also emit the end-of-season keeper snapshot (ESPN id +
+                              # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
+                              # AND an invisible, #snapshot-gated capture panel on the page. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
@@ -190,6 +194,7 @@ def build_from_espn(rosters, index, OWNER_TEAM):
                "pos": (e["pos"] or (sp["pos"] if sp else "")),  # ESPN's current roster slot
                "elig": e.get("elig", ""), "grp": grp,
                "kept": tag == "kept", "tag": tag, "p": p}
+        if EMIT_KEEPER_SNAPSHOT: rec["id"] = e.get("player_id")
         records.append(rec)
         t = teams.setdefault(team, {"team": team, "owner": owner, "count": 0, "kept": 0, "total2026": 0})
         t["count"] += 1; t["kept"] += 1 if tag == "kept" else 0
@@ -203,6 +208,41 @@ def team_meta(records):
         t["count"] += 1; t["kept"] += 1 if r["tag"] == "kept" else 0
         if r["p"][2026]: t["total2026"] += r["p"][2026]
     return teams
+
+def keeper_snapshot_payload(records, built_at, season_from):
+    """End-of-season keeper snapshot: each rostered player's ESPN id + next-year keeper cost
+    + last-3-kept-years history. Seeds the next season's carryover (see ROLLOVER-PLAN)."""
+    def last3(pr):
+        yrs = [y for y in range(season_from, season_from - 5, -1) if pr.get(y) is not None]
+        return {str(y): pr[y] for y in yrs[:3]}
+    players = [{"id": r.get("id"), "name": r.get("player"),
+                "team": r.get("team"), "owner": r.get("owner"),
+                "cost_next": r["p"].get(season_from + 1), "history": last3(r["p"])}
+               for r in records]
+    return {"season_from": season_from, "season_to": season_from + 1,
+            "built_at": built_at, "count": len(players), "players": players}
+
+def keeper_capture_block(json_str):
+    """Invisible, hash-gated (#snapshot) capture UI, appended to the built page only when
+    EMIT_KEEPER_SNAPSHOT is on. Owners on the normal URL never see it."""
+    js = ("(function(){function show(){if(document.getElementById('__ksBox'))return;"
+          "var raw=document.getElementById('__keeperSnapshot').textContent;"
+          "var w=document.createElement('div');w.id='__ksBox';"
+          "w.style.cssText='position:fixed;inset:0;z-index:99999;background:#0b0d0f;color:#eaebee;"
+          "padding:16px;box-sizing:border-box;font:13px/1.4 monospace;display:flex;flex-direction:column;gap:10px';"
+          "var h=document.createElement('div');h.style.cssText='font:600 14px sans-serif';"
+          "h.textContent='Keeper snapshot \u2014 tap Copy, paste it back in chat, then turn the switch off.';"
+          "var b=document.createElement('button');b.textContent='Copy';"
+          "b.style.cssText='align-self:flex-start;padding:8px 16px;font:600 13px sans-serif;cursor:pointer';"
+          "var t=document.createElement('textarea');t.readOnly=true;t.value=raw;"
+          "t.style.cssText='flex:1;width:100%;box-sizing:border-box;background:#151719;color:#eaebee;"
+          "border:1px solid #333;border-radius:6px;padding:10px';"
+          "b.onclick=function(){t.select();try{document.execCommand('copy');}catch(e){}b.textContent='Copied \u2713';};"
+          "w.appendChild(h);w.appendChild(b);w.appendChild(t);document.body.appendChild(w);}"
+          "if(location.hash==='#snapshot')show();"
+          "window.addEventListener('hashchange',function(){if(location.hash==='#snapshot')show();});})();")
+    return ('<script type="application/json" id="__keeperSnapshot">' + json_str + "</script>\n"
+            "<script>" + js + "</script>")
 
 def compute_standings(league):
     """Top-3 teams per H2H category + total 'Moves' for the $1/move pool.
@@ -526,9 +566,9 @@ def build():
     from datetime import datetime, timezone
     try:
         from zoneinfo import ZoneInfo
-        built_at = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%y · %-I:%M %p")
+        built_at = datetime.now(ZoneInfo("America/New_York")).strftime("%b %d, %Y · %I:%M %p %Z")
     except Exception:
-        built_at = datetime.now(timezone.utc).strftime("%m/%d/%y · %-I:%M %p")
+        built_at = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
     records, teams, live = draft_records, team_meta(draft_records), False
     stale = False; snapshot_at = ""; standings = None
     live_error = live_hint = target = ""
@@ -609,6 +649,22 @@ def build():
                         r["p"][y] = None
                 r["p"][2027] = p26 + 2
 
+    keeper_cap = None
+    if EMIT_KEEPER_SNAPSHOT and live and not stale:
+        _payload = keeper_snapshot_payload(records, built_at, SEASON)
+        _snap_json = json.dumps(_payload, ensure_ascii=False)
+        _missing = sum(1 for pp in _payload["players"] if not pp["id"])
+        try:
+            with open(f"keeper_snapshot_{SEASON}.json", "w", encoding="utf-8") as fh:
+                fh.write(_snap_json)
+            print(f"\u2713 EMIT_KEEPER_SNAPSHOT: wrote keeper_snapshot_{SEASON}.json "
+                  f"\u2014 {_payload['count']} players ({_missing} missing an ESPN id)")
+        except Exception as e:
+            print(f"  keeper snapshot: file write failed ({type(e).__name__}: {e})")
+        keeper_cap = keeper_capture_block(_snap_json)
+    elif EMIT_KEEPER_SNAPSHOT:
+        print("  keeper snapshot: skipped (needs a live ESPN build)")
+
     teams_out = teams if isinstance(teams, list) else sorted(teams.values(), key=lambda x: -x["total2026"])
     data = {"league": LEAGUE, "season": SEASON, "buyin": BUYIN, "live": live,
             "stale": stale, "snapshot_at": snapshot_at, "standings": standings,
@@ -661,6 +717,8 @@ def build():
         except Exception as e:
             data["auctionBakeCheck"] = {"ok": False, "note": f"{type(e).__name__}: {e}"}
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/", json.dumps(data, ensure_ascii=False))
+    if EMIT_KEEPER_SNAPSHOT and keeper_cap:
+        html = html.replace("</body>", keeper_cap + "\n</body>", 1)
     OUTPUT.write_text(html, encoding="utf-8")
     src = ("ESPN live rosters" if live else
            (f"last live snapshot ({snapshot_at})" if stale else "draft-day rosters (ESPN off)"))
