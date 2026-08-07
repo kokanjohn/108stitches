@@ -1241,11 +1241,12 @@ $('#bars').addEventListener('keydown',e=>{
   const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
   const view=document.getElementById('auctionView');
   let players=[], teams=null, selected=null, picksNow={}, dragKey=null;
+  let ROSTERED_IDS=new Set();
 
   async function loadData(){
     if(teams) return;
     try{ const r=await fetch('auction-players.json',{cache:'no-store'}); const j=await r.json();
-      players=j.players||[]; teams=j.teams||[]; }
+      players=j.players||[]; teams=j.teams||[]; ROSTERED_IDS=new Set((j.rosteredIds||[]).map(String)); }
     catch(e){ teams=teams||[]; }
   }
   const dbGet=async path=>{ try{ const r=await fetch(`${DB}/${path}.json`); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } };
@@ -1391,12 +1392,32 @@ $('#bars').addEventListener('keydown',e=>{
   document.getElementById('cardModal').addEventListener('click', e=>{ if(e.target.id==='cardModal'||e.target.id==='cardModalX') closeCardModal(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !document.getElementById('cardModal').hidden){ closeCardModal(); e.stopImmediatePropagation(); } });
 
+  /* ---- search: hide players already on a roster (keepers) + those assigned in this auction ---- */
+  function assignedFromPicks(picks){
+    const ids=new Set(), names=new Set();
+    Object.values(picks||{}).forEach(p=>{ if(!p) return;
+      if(p.playerId!=null && p.playerId!=='') ids.add(String(p.playerId));
+      if(p.player) names.add(String(p.player).trim().toLowerCase()); });
+    return {ids,names};
+  }
+  function filterAvailable(pool, q, picks){
+    const a=assignedFromPicks(picks);
+    return (pool||[]).filter(p=>{
+      const nm=String(p.name||'').trim().toLowerCase();
+      if(!nm.includes(q)) return false;
+      if(p.id!=null && ROSTERED_IDS.has(String(p.id))) return false;  // already on a roster (keeper)
+      if(p.id!=null && a.ids.has(String(p.id))) return false;         // won earlier in this auction
+      if(a.names.has(nm)) return false;                               // assigned (incl. write-ins)
+      return true;
+    });
+  }
+
   /* ---- search ---- */
   function runSearch(){
     const raw=document.getElementById('aucSearch').value.trim();
     const q=raw.toLowerCase(), box=document.getElementById('aucResults');
     if(!q){ box.hidden=true; box.innerHTML=''; return; }
-    const hits=players.filter(p=>(p.name||'').toLowerCase().includes(q)).slice(0,8);
+    const hits=filterAvailable(players, q, picksNow).slice(0,8);
     let html=hits.map(p=>`<button data-id="${p.id}"><span>${esc(p.name)}</span><span class="r-meta">${esc(p.mlb||'')} ${esc(p.pos||'')}</span></button>`).join('');
     html+=`<button data-writein="1" class="r-writein"><span>Use “${esc(raw)}” as write-in</span></button>`;
     box.innerHTML=html; box.hidden=false;

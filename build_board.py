@@ -566,13 +566,14 @@ def build():
     from datetime import datetime, timezone
     try:
         from zoneinfo import ZoneInfo
-        built_at = datetime.now(ZoneInfo("America/New_York")).strftime("%b %d, %Y · %I:%M %p %Z")
+        built_at = datetime.now(ZoneInfo("America/New_York")).strftime("%-m/%-d/%y · %-I:%M %p")
     except Exception:
-        built_at = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
+        built_at = datetime.now(timezone.utc).strftime("%-m/%-d/%y · %-I:%M %p")
     records, teams, live = draft_records, team_meta(draft_records), False
     stale = False; snapshot_at = ""; standings = None
     live_error = live_hint = target = ""
     keeper_diag = None
+    rosters = None
     if USE_ESPN:
         target = ESPN_URL_OVERRIDE or (
             f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{ESPN_SEASON}"
@@ -711,6 +712,7 @@ def build():
             data["auctionBakeCheck"] = check
             if full is not None:
                 full["teams"] = teams_budget
+                full["rosteredIds"] = sorted({e["player_id"] for e in (rosters or []) if e.get("player_id") is not None})
                 with open("auction-players.json", "w", encoding="utf-8") as fh:
                     json.dump(full, fh, ensure_ascii=False)
                 print(f"✓ Wrote auction-players.json — {full['count']} players, {len(teams_budget)} teams")
