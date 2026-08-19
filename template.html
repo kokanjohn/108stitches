@@ -1889,7 +1889,7 @@ setView(prefs.view==='master'?'master':'team');
     const max=Math.max(...s.payout.map(p=>p.earned));
     payEl.innerHTML=s.payout.map(p=>{
       const bits=[];
-      if(p.cats) bits.push(`${p.cats} cat${p.cats===1?'':'s'}`);
+      if(p.cats) bits.push(`${+(+p.cats).toFixed(2)} cat${p.cats===1?'':'s'}`);
       if(p.record) bits.push('record');
       return `<div class="pay-row">
       <div class="pay-team">${esc(p.team)}</div>

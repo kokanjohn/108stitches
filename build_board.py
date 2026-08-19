@@ -291,7 +291,7 @@ def compute_standings(league):
             share = slice_ / len(winners)
             for w in winners:
                 earn[w] = earn.get(w, 0) + share
-                leads[w] = leads.get(w, 0) + 1
+                leads[w] = leads.get(w, 0) + 1.0/len(winners)
     # best regular-season record (ties split; nothing awarded if no games played)
     record_teams = []
     if tds:
@@ -302,7 +302,7 @@ def compute_standings(league):
         rshare = record_share / len(record_teams)
         for rt in record_teams:
             earn[rt] = earn.get(rt, 0) + rshare
-    payout = sorted([{"team": t, "earned": round(earn[t]), "cats": leads.get(t, 0),
+    payout = sorted([{"team": t, "earned": round(earn[t]), "cats": round(leads.get(t, 0), 2),
                       "record": t in record_teams} for t in earn],
                     key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
