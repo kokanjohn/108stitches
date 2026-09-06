@@ -45,6 +45,7 @@ EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip
                               # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
                               # AND an invisible, #snapshot-gated capture panel on the page. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
+STANDINGS_LOCK_AT = "2026-09-07 06:00"   # ET; category winners freeze at/after this. "" = never lock. File is season-keyed.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
@@ -302,9 +303,12 @@ def compute_standings(league):
         rshare = record_share / len(record_teams)
         for rt in record_teams:
             earn[rt] = earn.get(rt, 0) + rshare
-    payout = sorted([{"team": t, "earned": round(earn[t]), "cats": round(leads.get(t, 0), 2),
-                      "record": t in record_teams} for t in earn],
-                    key=lambda x: (-x["earned"], x["team"]))
+    acq_by = {td["team"]: td["acq"] for td in tds}
+    def _row(t):
+        gross = round(earn[t]); mv = acq_by.get(t, 0)
+        return {"team": t, "gross": gross, "moves": mv, "earned": gross - mv,
+                "cats": round(leads.get(t, 0), 2), "record": t in record_teams}
+    payout = sorted([_row(t) for t in earn], key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
                    key=lambda x: (-x["moves"], x["team"]))
     return {"pool": total_moves, "totalMoves": total_moves,
@@ -540,6 +544,51 @@ def name_mismatch_report(wb):
     flagged.sort(key=lambda x: x["ratio"])
     return {"flagged": flagged, "orphans": orphans}
 
+def standings_lock_name():
+    return f"standings_lock_{SEASON}.json"
+
+def read_standings_lock():
+    """Read the season's frozen winners back from the published site (write-once, then frozen)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(PAGES_URL + standings_lock_name(), timeout=15) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+
+def make_standings_lock(standings, locked_at):
+    """Freeze the ALLOCATION only: who won each category, each team's cat-fraction + record-fraction,
+    and the stat cards. Dollars are re-derived live each build from the current pool."""
+    rt = standings.get("recordTeams") or []
+    rfrac = (1.0 / len(rt)) if rt else 0.0
+    alloc = [{"team": p["team"], "cats": p["cats"],
+              "recordFrac": (rfrac if p.get("record") else 0.0)}
+             for p in standings.get("payout", [])]
+    return {"lockedAt": locked_at, "season": SEASON,
+            "categories": standings.get("categories", []),
+            "recordTeams": rt, "alloc": alloc}
+
+def apply_standings_lock(standings, lock):
+    """Frozen split x live pool -> payouts grow but the split never changes; cards/winners frozen."""
+    tm = standings.get("totalMoves", 0) or 0
+    slice_ = tm * 0.07; rec_share = tm * 0.16
+    rt = lock.get("recordTeams") or []
+    mv_by = {m["team"]: m["moves"] for m in standings.get("moves", [])}
+    payout = []
+    for a in lock.get("alloc", []):
+        gross = round(a.get("cats", 0) * slice_ + a.get("recordFrac", 0.0) * rec_share)
+        mv = mv_by.get(a["team"], 0)
+        payout.append({"team": a["team"], "gross": gross, "moves": mv, "earned": gross - mv,
+                       "cats": a.get("cats", 0), "record": a["team"] in rt})
+    payout.sort(key=lambda x: (-x["earned"], x["team"]))
+    out = dict(standings)
+    out["categories"] = lock.get("categories", standings.get("categories", []))
+    out["recordTeams"] = rt
+    out["payout"] = payout
+    out["locked"] = True
+    out["lockedAt"] = lock.get("lockedAt", "")
+    return out
+
 def build():
     if not WORKSHEET.exists(): sys.exit(f"Can't find the worksheet: {WORKSHEET}")
     if not TEMPLATE.exists():  sys.exit("Can't find template.html next to this script.")
@@ -665,6 +714,31 @@ def build():
         keeper_cap = keeper_capture_block(_snap_json)
     elif EMIT_KEEPER_SNAPSHOT:
         print("  keeper snapshot: skipped (needs a live ESPN build)")
+
+    # ---- category-winner lock: freeze the split at the cutoff; dollars keep growing with the live pool ----
+    if standings is not None and STANDINGS_LOCK_AT:
+        try:
+            from datetime import datetime as _dt
+            from zoneinfo import ZoneInfo as _ZI
+            _et = _ZI("America/New_York")
+            _cutoff = _dt.strptime(STANDINGS_LOCK_AT, "%Y-%m-%d %H:%M").replace(tzinfo=_et)
+            _now = _dt.now(_et)
+        except Exception:
+            _cutoff = None
+        if _cutoff is not None and _now >= _cutoff:
+            _disp = _cutoff.strftime("%-I:%M %p ET, %-m/%-d/%y")
+            _lock = read_standings_lock()
+            if _lock is None and live:
+                _lock = make_standings_lock(standings, _disp)
+                try:
+                    with open(standings_lock_name(), "w", encoding="utf-8") as fh:
+                        json.dump(_lock, fh, ensure_ascii=False)
+                    print(f"\u2713 Category winners LOCKED \u2014 wrote {standings_lock_name()} (as of {_disp})")
+                except Exception as e:
+                    print(f"  standings lock: write failed ({type(e).__name__}: {e})")
+            if _lock is not None:
+                standings = apply_standings_lock(standings, _lock)
+                print(f"  standings: locked as of {standings.get('lockedAt','')} \u2014 split frozen, payouts track the live pool")
 
     teams_out = teams if isinstance(teams, list) else sorted(teams.values(), key=lambda x: -x["total2026"])
     data = {"league": LEAGUE, "season": SEASON, "buyin": BUYIN, "live": live,
