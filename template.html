@@ -171,13 +171,13 @@
   #stdMovesBars .amt::before{content:""}
   .std-payh{font:700 13px "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);margin-bottom:12px}
   .std-slice{color:var(--mute);font-weight:400;font-size:11px;text-transform:none;letter-spacing:.02em}
-  .pay-row{display:grid;grid-template-columns:150px 1fr 112px;gap:10px;align-items:center;padding:5px 0}
-  .pay-team{font:500 13px "Oswald",sans-serif;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pay-track{height:18px;background:var(--chalk);border-radius:4px;overflow:hidden}
+  .pay-row{display:grid;grid-template-columns:150px 1fr 112px;grid-template-areas:"team track amt" ". sub sub";gap:3px 10px;align-items:center;padding:6px 0}
+  .pay-team{grid-area:team;font:500 13px "Oswald",sans-serif;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pay-track{grid-area:track;height:18px;background:var(--chalk);border-radius:4px;overflow:hidden}
   .pay-fill{height:100%;background:linear-gradient(90deg,#5b5e66,#c9ccd2);border-radius:4px}
-  .pay-amt{font-family:"Roboto Mono",monospace;font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
-  .pay-amt .cats{color:var(--mute);font-weight:400;font-size:11px}
-  @media (max-width:560px){ .pay-row{grid-template-columns:104px 1fr 104px;gap:8px} }
+  .pay-amt{grid-area:amt;font-family:"Roboto Mono",monospace;font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
+  .pay-sub{grid-area:sub;color:var(--mute);font-weight:400;font-size:11px;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+  @media (max-width:560px){ .pay-row{grid-template-columns:104px 1fr 104px;gap:3px 8px} }
   .wm-form{display:grid;grid-template-columns:1fr 1fr 90px 1.4fr auto;gap:8px;align-items:center;
     padding:14px 0 16px;border-bottom:1px solid var(--line);margin-bottom:14px}
   .wm-form select,.wm-form input{padding:9px 10px;border:1px solid var(--line);background:var(--paper);
@@ -1900,7 +1900,8 @@ setView(prefs.view==='master'?'master':'team');
       return `<div class="pay-row">
       <div class="pay-team">${esc(p.team)}</div>
       <div class="pay-track"><div class="pay-fill" style="width:${w.toFixed(1)}%"></div></div>
-      <div class="pay-amt">${dollars(p.earned)} <span class="cats">${bits.join(' · ')}</span></div>
+      <div class="pay-amt">${dollars(p.earned)}</div>
+      <div class="pay-sub">${bits.join(' · ')}</div>
     </div>`;
     }).join('');
   }
