@@ -275,6 +275,7 @@ def compute_standings(league):
     record_share = total_moves * 0.16    # best regular-season record = 16% of the pool
     cats = []
     earn, leads = {}, {}
+    val_by_team = {}
     for label in CAT_ORDER:
         sid = CAT_STATID[label]; rev = label in REV
         rows = []
@@ -286,6 +287,7 @@ def compute_standings(league):
                 except (TypeError, ValueError): pass
         rows.sort(key=lambda r: r["value"], reverse=not rev)
         cats.append({"label": label, "statId": sid, "reverse": rev, "top3": rows[:3]})
+        for _r in rows: val_by_team.setdefault(_r["team"], {})[label] = _r["value"]
         if rows:
             best = rows[0]["value"]
             winners = [r["team"] for r in rows if r["value"] == best]   # ties split the slice
@@ -311,10 +313,13 @@ def compute_standings(league):
     payout = sorted([_row(t) for t in earn], key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
                    key=lambda x: (-x["moves"], x["team"]))
+    matrix = sorted(({"team": td["team"], "vals": val_by_team.get(td["team"], {})} for td in tds),
+                    key=lambda x: x["team"])
     return {"pool": total_moves, "totalMoves": total_moves,
             "slice": round(slice_, 2), "catShare": round(slice_, 2),
             "recordShare": round(record_share, 2), "recordTeams": record_teams,
-            "moves": moves, "categories": cats, "payout": payout}
+            "moves": moves, "categories": cats, "payout": payout,
+            "matrix": matrix, "catOrder": CAT_ORDER}
 
 def auction_diagnostic():
     """Phase 1: pull a few players from the ESPN pool via the relay and return a
@@ -566,6 +571,7 @@ def make_standings_lock(standings, locked_at):
              for p in standings.get("payout", [])]
     return {"lockedAt": locked_at, "season": SEASON,
             "categories": standings.get("categories", []),
+            "matrix": standings.get("matrix", []), "catOrder": standings.get("catOrder", []),
             "recordTeams": rt, "alloc": alloc}
 
 def apply_standings_lock(standings, lock):
@@ -583,6 +589,8 @@ def apply_standings_lock(standings, lock):
     payout.sort(key=lambda x: (-x["earned"], x["team"]))
     out = dict(standings)
     out["categories"] = lock.get("categories", standings.get("categories", []))
+    out["matrix"] = lock.get("matrix") or standings.get("matrix", [])
+    out["catOrder"] = lock.get("catOrder") or standings.get("catOrder", [])
     out["recordTeams"] = rt
     out["payout"] = payout
     out["locked"] = True
