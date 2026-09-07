@@ -719,6 +719,7 @@
     <div class="modal-body">
       <div class="std-pool" id="stdPool"></div>
       <div class="std-lock" id="stdLock" style="display:none"></div>
+      <button class="wm-export" id="stdDownload" style="display:none;margin:0 0 16px">Download snapshot</button>
       <div class="std-payout" id="stdPayoutWrap" style="display:none">
         <div class="std-payh">Pool payouts<span class="std-slice" id="stdSlice"></span></div>
         <div id="stdPayout"></div>
@@ -1916,8 +1917,9 @@ setView(prefs.view==='master'?'master':'team');
     </div>`).join('');
   }
   function build(){
-    const lockEl=document.getElementById('stdLock');
-    if(lockEl){ if(s&&s.locked){ lockEl.style.display=''; lockEl.innerHTML='<b>Category winners locked</b> as of '+esc(s.lockedAt||'')+' · payouts still grow with the transaction pool'; } else lockEl.style.display='none'; }
+    const lockEl=document.getElementById('stdLock'), dlEl=document.getElementById('stdDownload'), lk=!!(s&&s.locked);
+    if(lockEl){ if(lk){ lockEl.style.display=''; lockEl.innerHTML='<b>Category winners locked</b> as of '+esc(s.lockedAt||'')+' · payouts still grow with the transaction pool'; } else lockEl.style.display='none'; }
+    if(dlEl) dlEl.style.display = lk ? '' : 'none';
     if(!s || !s.categories || !s.categories.length){
       grid.style.display='none'; emptyEl.style.display='block';
       poolEl.innerHTML = s ? `<span class="lab">Transaction pool</span><span class="amt">$${s.pool||0}</span>` : '';
@@ -1933,6 +1935,27 @@ setView(prefs.view==='master'?'master':'team');
     renderMoves();
   }
   build();
+  function downloadSnapshot(){
+    if(!s || !s.locked || !s.payout || typeof XLSX==='undefined') return;
+    const pay=[['108 Stitches — Category Standings (locked)'],
+               ['Locked as of', s.lockedAt||''],
+               ['Transaction pool', s.pool||0], [],
+               ['Rank','Team','Categories won','Gross $','Move fees $','Net $','Best record']];
+    s.payout.forEach((p,i)=>pay.push([i+1, p.team, +(+(p.cats||0)).toFixed(2),
+        p.gross!=null?p.gross:'', p.moves!=null?p.moves:'', p.earned, p.record?'Yes':'']));
+    const cat=[['Category','Winner(s)','Value']];
+    (s.categories||[]).forEach(c=>{
+      const t3=c.top3||[];
+      if(!t3.length){ cat.push([c.label,'—','']); return; }
+      const best=t3[0].value, w=t3.filter(r=>r.value===best).map(r=>r.team).join(', ');
+      cat.push([c.label+(c.reverse?' (low)':''), w, best]);
+    });
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pay), 'Payouts');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cat), 'Category winners');
+    XLSX.writeFile(wb, `108-stitches-standings-${DATA.season||''}.xlsx`);
+  }
+  { const b=document.getElementById('stdDownload'); if(b) b.addEventListener('click', downloadSnapshot); }
   function openM(){ modal.hidden=false; document.body.style.overflow='hidden'; }
   function closeM(){ modal.hidden=true; document.body.style.overflow=''; }
   window.SCREENS=window.SCREENS||{}; window.SCREENS.openStandings=openM; window.SCREENS.closeStandings=closeM;
