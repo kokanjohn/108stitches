@@ -1943,16 +1943,19 @@ setView(prefs.view==='master'?'master':'team');
                ['Rank','Team','Categories won','Gross $','Move fees $','Net $','Best record']];
     s.payout.forEach((p,i)=>pay.push([i+1, p.team, +(+(p.cats||0)).toFixed(2),
         p.gross!=null?p.gross:'', p.moves!=null?p.moves:'', p.earned, p.record?'Yes':'']));
-    const cat=[['Category','Winner(s)','Value']];
-    (s.categories||[]).forEach(c=>{
-      const t3=c.top3||[];
-      if(!t3.length){ cat.push([c.label,'—','']); return; }
-      const best=t3[0].value, w=t3.filter(r=>r.value===best).map(r=>r.team).join(', ');
-      cat.push([c.label+(c.reverse?' (low)':''), w, best]);
+    const cols=(s.catOrder&&s.catOrder.length)?s.catOrder:(s.categories||[]).map(c=>c.label);
+    const byT={}; (s.payout||[]).forEach(p=>byT[p.team]=p);
+    const mvBy={}; (s.moves||[]).forEach(m=>mvBy[m.team]=m.moves);
+    const grid=[['Team', ...cols, 'Cats won', 'Net $']];
+    (s.matrix||[]).forEach(row=>{
+      const p=byT[row.team];
+      const net = p ? p.earned : (mvBy[row.team]!=null ? -mvBy[row.team] : '');
+      const cw  = p ? +(+(p.cats||0)).toFixed(2) : 0;
+      grid.push([row.team, ...cols.map(c=>{ const v=row.vals?row.vals[c]:null; return v==null?'':v; }), cw, net]);
     });
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pay), 'Payouts');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cat), 'Category winners');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(grid), 'Full standings');
     XLSX.writeFile(wb, `108-stitches-standings-${DATA.season||''}.xlsx`);
   }
   { const b=document.getElementById('stdDownload'); if(b) b.addEventListener('click', downloadSnapshot); }
