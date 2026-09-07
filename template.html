@@ -164,18 +164,20 @@
   .std-top .st-team{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .std-top .st-val{flex:0 0 auto;font-family:"Roboto Mono",monospace;font-weight:700;color:var(--ink)}
   .std-diag{color:var(--mute);font-size:11.5px;margin-top:18px;padding-top:12px;border-top:1px solid var(--line);font-family:"Roboto Mono",monospace;word-break:break-word;white-space:pre-wrap}
+  .std-lock{margin:0 0 14px;padding:10px 13px;border-radius:9px;background:var(--field);border:1px solid var(--line);border-left:3px solid var(--stitch);color:var(--ink);font-size:12.5px;line-height:1.45}
+  .std-lock b{color:var(--stitch)}
   .std-payout{margin:0 0 18px;padding-bottom:18px;border-bottom:1px solid var(--line)}
   #stdMoves{margin:0 0 18px}
   #stdMovesBars .amt::before{content:""}
   .std-payh{font:700 13px "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);margin-bottom:12px}
   .std-slice{color:var(--mute);font-weight:400;font-size:11px;text-transform:none;letter-spacing:.02em}
-  .pay-row{display:grid;grid-template-columns:150px 1fr 112px;gap:10px;align-items:center;padding:5px 0}
-  .pay-team{font:500 13px "Oswald",sans-serif;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pay-track{height:18px;background:var(--chalk);border-radius:4px;overflow:hidden}
+  .pay-row{display:grid;grid-template-columns:150px 1fr 112px;grid-template-areas:"team track amt" ". sub sub";gap:3px 10px;align-items:center;padding:6px 0}
+  .pay-team{grid-area:team;font:500 13px "Oswald",sans-serif;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pay-track{grid-area:track;height:18px;background:var(--chalk);border-radius:4px;overflow:hidden}
   .pay-fill{height:100%;background:linear-gradient(90deg,#5b5e66,#c9ccd2);border-radius:4px}
-  .pay-amt{font-family:"Roboto Mono",monospace;font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
-  .pay-amt .cats{color:var(--mute);font-weight:400;font-size:11px}
-  @media (max-width:560px){ .pay-row{grid-template-columns:104px 1fr 104px;gap:8px} }
+  .pay-amt{grid-area:amt;font-family:"Roboto Mono",monospace;font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
+  .pay-sub{grid-area:sub;color:var(--mute);font-weight:400;font-size:11px;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+  @media (max-width:560px){ .pay-row{grid-template-columns:104px 1fr 104px;gap:3px 8px} }
   .wm-form{display:grid;grid-template-columns:1fr 1fr 90px 1.4fr auto;gap:8px;align-items:center;
     padding:14px 0 16px;border-bottom:1px solid var(--line);margin-bottom:14px}
   .wm-form select,.wm-form input{padding:9px 10px;border:1px solid var(--line);background:var(--paper);
@@ -716,6 +718,7 @@
     </div>
     <div class="modal-body">
       <div class="std-pool" id="stdPool"></div>
+      <div class="std-lock" id="stdLock" style="display:none"></div>
       <div class="std-payout" id="stdPayoutWrap" style="display:none">
         <div class="std-payh">Pool payouts<span class="std-slice" id="stdSlice"></span></div>
         <div id="stdPayout"></div>
@@ -1886,15 +1889,19 @@ setView(prefs.view==='master'?'master':'team');
     sliceEl.textContent = cs!=null
       ? ` · each category = $${money(cs)}` + (s.recordShare!=null?` · best record = $${money(s.recordShare)}`:'')
       : '';
-    const max=Math.max(...s.payout.map(p=>p.earned));
+    const dollars=v=>(v<0?'-$':'$')+money(Math.abs(v));
+    const max=Math.max(...s.payout.map(p=>p.earned), 1);
     payEl.innerHTML=s.payout.map(p=>{
       const bits=[];
       if(p.cats) bits.push(`${+(+p.cats).toFixed(2)} cat${p.cats===1?'':'s'}`);
       if(p.record) bits.push('record');
+      if(p.gross!=null && p.moves!=null) bits.push(`$${money(p.gross)} − $${money(p.moves)} moves`);
+      const w=max>0?Math.max(0,Math.min(100,p.earned/max*100)):0;
       return `<div class="pay-row">
       <div class="pay-team">${esc(p.team)}</div>
-      <div class="pay-track"><div class="pay-fill" style="width:${max?(p.earned/max*100).toFixed(1):0}%"></div></div>
-      <div class="pay-amt">$${money(p.earned)} <span class="cats">${bits.join(' · ')}</span></div>
+      <div class="pay-track"><div class="pay-fill" style="width:${w.toFixed(1)}%"></div></div>
+      <div class="pay-amt">${dollars(p.earned)}</div>
+      <div class="pay-sub">${bits.join(' · ')}</div>
     </div>`;
     }).join('');
   }
@@ -1909,6 +1916,8 @@ setView(prefs.view==='master'?'master':'team');
     </div>`).join('');
   }
   function build(){
+    const lockEl=document.getElementById('stdLock');
+    if(lockEl){ if(s&&s.locked){ lockEl.style.display=''; lockEl.innerHTML='<b>Category winners locked</b> as of '+esc(s.lockedAt||'')+' · payouts still grow with the transaction pool'; } else lockEl.style.display='none'; }
     if(!s || !s.categories || !s.categories.length){
       grid.style.display='none'; emptyEl.style.display='block';
       poolEl.innerHTML = s ? `<span class="lab">Transaction pool</span><span class="amt">$${s.pool||0}</span>` : '';
