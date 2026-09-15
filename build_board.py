@@ -45,7 +45,8 @@ EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip
                               # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
                               # AND an invisible, #snapshot-gated capture panel on the page. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
-STANDINGS_LOCK_AT = "2026-09-07 06:00"   # ET; category winners freeze at/after this. "" = never lock. File is season-keyed.
+STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
+                         # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
@@ -552,6 +553,19 @@ def name_mismatch_report(wb):
 def standings_lock_name():
     return f"standings_lock_{SEASON}.json"
 
+def regular_season_over(league):
+    """(verdict, info). verdict True/False when ESPN clearly reports whether the fantasy regular
+    season is complete (current matchup period has passed the scheduled regular-season count, i.e.
+    playoffs have begun); else None (unknown -> caller falls back to the manual date if set)."""
+    st = league.get("status") or {}
+    sched = (league.get("settings") or {}).get("scheduleSettings") or {}
+    reg = sched.get("matchupPeriodCount"); cur = st.get("currentMatchupPeriod")
+    info = {"matchupPeriodCount": reg, "currentMatchupPeriod": cur,
+            "finalScoringPeriod": st.get("finalScoringPeriod"),
+            "latestScoringPeriod": st.get("latestScoringPeriod")}
+    verdict = (cur > reg) if (isinstance(reg, int) and isinstance(cur, int) and reg > 0) else None
+    return verdict, info
+
 def read_standings_lock():
     """Frozen winners. Prefer a committed local file (bulletproof — immune to CDN cache / 404);
     fall back to the published copy only if no local file exists."""
@@ -639,6 +653,7 @@ def build():
     live_error = live_hint = target = ""
     keeper_diag = None
     rosters = None
+    reg_over = None; reg_diag = None
     if USE_ESPN:
         target = ESPN_URL_OVERRIDE or (
             f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{ESPN_SEASON}"
@@ -652,6 +667,7 @@ def build():
             rosters = current_rosters(league, OWNER_ALIAS)
             records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM)
             standings = compute_standings(league)
+            reg_over, reg_diag = regular_season_over(league)
             live = True
             if KEEPER_DIAG:
                 try: keeper_diag = keeper_diagnostic(league)
@@ -662,6 +678,7 @@ def build():
                   f"({matched} matched to sheet prices)")
             print(f"  standings: {len(standings['categories'])} categories, "
                   f"{standings['totalMoves']} total moves (${standings['pool']} pool)")
+            print(f"  regular-season check: over={reg_over}  {reg_diag}")
         except Exception as e:
             live_error = f"{type(e).__name__}: {e}"
             if isinstance(e, urllib.error.HTTPError):
@@ -731,30 +748,38 @@ def build():
     elif EMIT_KEEPER_SNAPSHOT:
         print("  keeper snapshot: skipped (needs a live ESPN build)")
 
-    # ---- category-winner lock: freeze the split at the cutoff; dollars keep growing with the live pool ----
-    if standings is not None and STANDINGS_LOCK_AT:
-        try:
-            from datetime import datetime as _dt
-            from zoneinfo import ZoneInfo as _ZI
-            _et = _ZI("America/New_York")
-            _cutoff = _dt.strptime(STANDINGS_LOCK_AT, "%Y-%m-%d %H:%M").replace(tzinfo=_et)
-            _now = _dt.now(_et)
-        except Exception:
-            _cutoff = None
-        if _cutoff is not None and _now >= _cutoff:
-            _disp = _cutoff.strftime("%-I:%M %p ET, %-m/%-d/%y")
-            _lock = read_standings_lock()
-            if _lock is None and live:
-                _lock = make_standings_lock(standings, _disp)
-                try:
-                    with open(standings_lock_name(), "w", encoding="utf-8") as fh:
-                        json.dump(_lock, fh, ensure_ascii=False)
-                    print(f"\u2713 Category winners LOCKED \u2014 wrote {standings_lock_name()} (as of {_disp})")
-                except Exception as e:
-                    print(f"  standings lock: write failed ({type(e).__name__}: {e})")
-            if _lock is not None:
-                standings = apply_standings_lock(standings, _lock)
-                print(f"  standings: locked as of {standings.get('lockedAt','')} \u2014 split frozen, payouts track the live pool")
+    # ---- category-winner lock: freeze the split once the fantasy regular season ends ----
+    # Trigger is automatic: ESPN reports the regular season complete (reg_over). STANDINGS_LOCK_AT is
+    # only a manual backstop, used when auto-detection is unavailable. Once captured, build.yml commits
+    # the lock file to the repo and read_standings_lock() reads it locally forever -> it cannot drift.
+    if standings is not None:
+        _should = (reg_over is True)
+        if (not _should) and reg_over is None and STANDINGS_LOCK_AT:
+            try:
+                from datetime import datetime as _dt
+                from zoneinfo import ZoneInfo as _ZI
+                _cut = _dt.strptime(STANDINGS_LOCK_AT, "%Y-%m-%d %H:%M").replace(tzinfo=_ZI("America/New_York"))
+                _should = _dt.now(_ZI("America/New_York")) >= _cut
+            except Exception:
+                _should = False
+        _lock = read_standings_lock()
+        if _lock is None and _should and live:
+            try:
+                from datetime import datetime as _dt2
+                from zoneinfo import ZoneInfo as _ZI2
+                _disp = _dt2.now(_ZI2("America/New_York")).strftime("%-I:%M %p ET, %-m/%-d/%y")
+            except Exception:
+                _disp = "end of regular season"
+            _lock = make_standings_lock(standings, _disp)
+            try:
+                with open(standings_lock_name(), "w", encoding="utf-8") as fh:
+                    json.dump(_lock, fh, ensure_ascii=False)
+                print(f"\u2713 Category winners LOCKED (regular season over) \u2014 wrote {standings_lock_name()}")
+            except Exception as e:
+                print(f"  standings lock: write failed ({type(e).__name__}: {e})")
+        if _lock is not None:
+            standings = apply_standings_lock(standings, _lock)
+            print(f"  standings: LOCKED as of {standings.get('lockedAt','')} \u2014 split frozen, payouts track the live pool")
 
     teams_out = teams if isinstance(teams, list) else sorted(teams.values(), key=lambda x: -x["total2026"])
     data = {"league": LEAGUE, "season": SEASON, "buyin": BUYIN, "live": live,
@@ -762,6 +787,7 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
+    data["regSeason"] = {"over": reg_over, **(reg_diag or {})}
 
     # Duplicate-name set for display-only team tagging on rosters (keyof-normalized keys).
     # Seed with the manual list + any name that shows up with 2+ distinct MLB teams among
