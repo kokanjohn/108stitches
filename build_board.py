@@ -553,10 +553,18 @@ def standings_lock_name():
     return f"standings_lock_{SEASON}.json"
 
 def read_standings_lock():
-    """Read the season's frozen winners back from the published site (write-once, then frozen)."""
+    """Frozen winners. Prefer a committed local file (bulletproof — immune to CDN cache / 404);
+    fall back to the published copy only if no local file exists."""
+    fn = standings_lock_name()
+    try:
+        lp = HERE / fn
+        if lp.exists():
+            return json.loads(lp.read_text(encoding="utf-8"))
+    except Exception:
+        pass
     import urllib.request
     try:
-        with urllib.request.urlopen(PAGES_URL + standings_lock_name(), timeout=15) as r:
+        with urllib.request.urlopen(PAGES_URL + fn, timeout=15) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception:
         return None
