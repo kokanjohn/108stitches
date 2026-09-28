@@ -133,11 +133,7 @@
   .junkview{position:fixed;left:0;right:0;top:0;bottom:var(--nav-h);z-index:90;
     background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch}
   .junkview[hidden]{display:none}
-  .spview{position:fixed;left:0;right:0;top:0;bottom:var(--nav-h);z-index:90;background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .spview[hidden]{display:none}
-  .spview-in{max-width:640px;margin:0 auto;padding:28px 20px 40px}
-  .spview h2{font:700 clamp(22px,6vw,30px)/1 "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.02em;margin:0 0 4px;color:var(--ink)}
-  .spview .sp-sub{color:var(--mute);font-size:13px;margin:0 0 22px}
+  /* season payouts — shares .modal/.modal-sheet/.modal-body */
   .sp-inprog{padding:18px;border-radius:10px;background:var(--field);border:1px solid var(--line);color:var(--mute);font-size:14px;line-height:1.5;text-align:center}
   .sp-table{width:100%;border-collapse:collapse;margin-bottom:24px}
   .sp-table th{font:700 11px/1 "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);padding:0 8px 8px;text-align:left;border-bottom:1px solid var(--line)}
@@ -2095,11 +2091,16 @@ setView(prefs.view==='master'?'master':'team');
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!modal.hidden) closeM(); });
 })();
 </script>
-<div class="spview" id="spView" hidden>
-  <div class="spview-in">
-    <h2>Season Payouts</h2>
-    <p class="sp-sub">What each team earns or owes after the full season.</p>
-    <div id="spContent"></div>
+<div class="modal" id="spModal" role="dialog" aria-modal="true" aria-label="Season Payouts" hidden>
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <h2>Season Payouts</h2>
+      <button class="modal-x" id="spClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="sp-sub">What each team earns or owes after the full season.</p>
+      <div id="spContent"></div>
+    </div>
   </div>
 </div>
 <nav class="snav" role="navigation" aria-label="Main">
@@ -2152,7 +2153,7 @@ setView(prefs.view==='master'?'master':'team');
 <script>
 /* ---- season payouts ---- */
 (function(){
-  var view=document.getElementById('spView');
+  var modal=document.getElementById('spModal');
   var content=document.getElementById('spContent');
   function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
   function money(v){return Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});}
@@ -2215,10 +2216,13 @@ setView(prefs.view==='master'?'master':'team');
     content.innerHTML=html;
   }
 
-  function openM(){ view.hidden=false; document.body.style.overflow='hidden'; render(); }
-  function closeM(){ view.hidden=true; document.body.style.overflow=''; }
+  function openM(){ modal.hidden=false; document.body.style.overflow='hidden'; render(); }
+  function closeM(){ modal.hidden=true; document.body.style.overflow=''; }
   window.SCREENS=window.SCREENS||{};
   window.SCREENS.openSeasonPay=openM; window.SCREENS.closeSeasonPay=closeM;
+  document.getElementById('spClose').addEventListener('click',closeM);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeM();});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!modal.hidden)closeM();});
 })();
 </script>
 <script>
