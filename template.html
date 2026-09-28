@@ -2161,58 +2161,53 @@ setView(prefs.view==='master'?'master':'team');
   function render(){
     var st=DATA.standings, ss=DATA.seasonStandings||{};
     var locked=st&&st.locked;
-
-    // season in progress
     if(!locked || !Object.keys(ss).length){
-      content.innerHTML='<div class="sp-inprog">⏳ The season is still in progress — check back once the playoffs have finished and the final standings are confirmed.</div>';
+      content.innerHTML='<div class="sp-inprog">&#9203; The season is still in progress — check back once the playoffs have finished and the final standings are confirmed.</div>';
       return;
     }
-
-    // build a lookup: team name -> {rank, prize, badge}
+    // prize lookup keyed by team name
     var prizes={};
-    var LABELS={1:'1st place',2:'2nd place',3:'3rd place',4:'4th place','consolation':'Consolation'};
+    var LABELS={'1':'1st place','2':'2nd place','3':'3rd place','4':'4th place','consolation':'Consolation'};
     Object.keys(ss).forEach(function(k){
-      var e=ss[k]; prizes[e.team]={prize:e.prize||0, badge:LABELS[k]||''};
+      var e=ss[k]; if(e&&e.team) prizes[e.team]={prize:e.prize||0, badge:LABELS[String(k)]||''};
     });
-
-    // cat pool net per team from standings
-    var catNet={};
-    (st.payout||[]).forEach(function(p){ catNet[p.team]=p.earned||0; });
-
-    // all teams from DATA.teams
-    var teams=(DATA.teams||[]).slice().sort(function(a,b){return a.team<b.team?-1:1;});
-
-    // compute rows
-    var rows=teams.map(function(t){
-      var nm=t.team;
-      var cat=catNet[nm]||0;
-      var prize=(prizes[nm]||{}).prize||0;
-      var badge=(prizes[nm]||{}).badge||'';
-      var net=cat+prize;   // positive = owed to team; negative = team still owes (shouldn't happen without entry fee)
-      return {team:nm,cat:cat,prize:prize,badge:badge,net:net};
-    });
-    rows.sort(function(a,b){return b.net-a.net;});
-
+    // use standings.payout as authoritative team list — correct names, has gross/moves/earned
     var totalPool=st.pool||0;
-    var html='<table class="sp-table">'
-      +'<thead><tr>'
-      +'<th>Team</th>'
-      +'<th class="num">Cat pool</th>'
-      +'<th class="num">Standings</th>'
-      +'<th class="num">Total payout</th>'
-      +'</tr></thead><tbody>';
+    var rows=(st.payout||[]).map(function(p){
+      var pr=prizes[p.team]||{prize:0,badge:''};
+      return {team:p.team, gross:p.gross!=null?p.gross:0, moves:p.moves!=null?p.moves:0,
+              cat:p.earned!=null?p.earned:0, cats:p.cats||0,
+              prize:pr.prize, badge:pr.badge, net:(p.earned!=null?p.earned:0)+pr.prize};
+    });
+    // include prize winners not in standings.payout (e.g. consolation winner with 0 cats)
+    Object.keys(prizes).forEach(function(nm){
+      if(!rows.some(function(r){return r.team===nm;}))
+        rows.push({team:nm,gross:0,moves:0,cat:0,cats:0,prize:prizes[nm].prize,badge:prizes[nm].badge,net:prizes[nm].prize});
+    });
+    rows.sort(function(a,b){ return b.net-a.net||a.team.localeCompare(b.team); });
 
+    function fmt(v,showZero){
+      if(v===0) return showZero?'<span class="sp-amt">$0</span>':'&mdash;';
+      return v<0?'<span class="sp-amt owed">-$'+money(-v)+'</span>':'<span class="sp-amt paid">$'+money(v)+'</span>';
+    }
+    var html='<table class="sp-table"><thead><tr>'
+      +'<th>Team</th><th class="num">Moves</th><th class="num">Cat pool net</th>'
+      +'<th class="num">Standings</th><th class="num">Total payout</th>'
+      +'</tr></thead><tbody>';
     rows.forEach(function(r){
-      var netCls=r.net<0?'owed':'paid';
       html+='<tr>'
-        +'<td><div class="sp-team">'+esc(r.team)+(r.badge?'<span class="sp-badge">'+esc(r.badge)+'</span>':'')+'</div></td>'
-        +'<td class="num sp-amt '+(r.cat<0?'owed':r.cat>0?'paid':'')+'">'+( r.cat===0?'—':(r.cat<0?'-':'')+'\$'+money(r.cat))+'</td>'
-        +'<td class="num sp-amt '+(r.prize>0?'paid':'')+'">'+( r.prize?'\$'+money(r.prize):'—')+'</td>'
-        +'<td class="num sp-amt '+netCls+'">'+( r.net<0?'-':'')+'\$'+money(r.net)+'</td>'
+        +'<td><div class="sp-team">'+esc(r.team)+(r.badge?'<span class="sp-badge">'+esc(r.badge)+'</span>':'')+'</div>'
+        +(r.cats?'<div class="sp-pos">'+r.cats+' cat'+(r.cats===1?'':'s')+' won</div>':'')+'</td>'
+        +'<td class="num sp-amt">'+money(r.moves)+'</td>'
+        +'<td class="num">'+fmt(r.cat,false)+'</td>'
+        +'<td class="num sp-amt '+(r.prize>0?'paid':'')+'">'+( r.prize?'$'+money(r.prize):'&mdash;')+'</td>'
+        +'<td class="num">'+fmt(r.net,true)+'</td>'
         +'</tr>';
     });
     html+='</tbody></table>';
-    html+='<div class="sp-total">Transaction pool: \$'+money(totalPool)+' · Category payouts = 7% per cat won + 16% best record</div>';
+    html+='<div class="sp-total">Transaction pool: $'+money(totalPool)
+      +' &nbsp;&middot;&nbsp; Cat pool = 7% per cat won + 16% best record'
+      +' &nbsp;&middot;&nbsp; Standings: 1st $950 &middot; 2nd $600 &middot; 3rd $250 &middot; 4th $200 &middot; Consolation $160</div>';
     content.innerHTML=html;
   }
 
