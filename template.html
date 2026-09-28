@@ -2165,19 +2165,38 @@ setView(prefs.view==='master'?'master':'team');
       content.innerHTML='<div class="sp-inprog">&#9203; The season is still in progress — check back once the playoffs have finished and the final standings are confirmed.</div>';
       return;
     }
-    // prize lookup keyed by team name
+    // all known ESPN team names (from moves, which has all 16)
+    var allTeams=(st.moves||[]).map(function(m){return m.team;});
+    // fuzzy match: find the closest ESPN team name to a given string
+    function fuzzyMatch(name, candidates){
+      var n=name.toLowerCase().replace(/[^a-z0-9]/g,'');
+      var best=null, bestScore=-1;
+      candidates.forEach(function(c){
+        var cn=c.toLowerCase().replace(/[^a-z0-9]/g,'');
+        // score: length of longest common subsequence-ish via shared chars
+        var matches=0, ci=0;
+        for(var ni=0;ni<n.length&&ci<cn.length;ni++){
+          if(n[ni]===cn[ci]){matches++;ci++;}
+        }
+        var score=matches/Math.max(n.length,cn.length);
+        if(score>bestScore){bestScore=score;best=c;}
+      });
+      return bestScore>0.6?best:null;
+    }
+    // prize lookup: fuzzy-match SEASON_STANDINGS names to real ESPN team names
     var prizes={};
     var LABELS={'1':'1st place','2':'2nd place','3':'3rd place','4':'4th place','consolation':'Consolation'};
     Object.keys(ss).forEach(function(k){
-      var e=ss[k]; if(e&&e.team) prizes[e.team]={prize:e.prize||0,badge:LABELS[String(k)]||''};
+      var e=ss[k]; if(!e||!e.team) return;
+      var matched=fuzzyMatch(e.team, allTeams)||e.team;
+      prizes[matched]={prize:e.prize||0, badge:LABELS[String(k)]||''};
     });
-    // index payout by team name (only cat winners are here currently)
+    // index payout and moves by team name
     var payIdx={};
     (st.payout||[]).forEach(function(p){ payIdx[p.team]=p; });
-    // st.moves has ALL 16 teams — use it as the master list
     var mvIdx={};
     (st.moves||[]).forEach(function(m){ mvIdx[m.team]=m.moves||0; });
-    // build master team set: union of moves + payout + prizes
+    // master team set: union of all sources
     var teamSet={};
     (st.moves||[]).forEach(function(m){ teamSet[m.team]=1; });
     (st.payout||[]).forEach(function(p){ teamSet[p.team]=1; });
