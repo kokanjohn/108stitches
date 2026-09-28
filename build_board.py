@@ -40,6 +40,7 @@ AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
+STANDINGS_DIAG       = True   # Log per-team ranking fields from ESPN to confirm auto-detection. Set False once confirmed.
 EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip for ONE live GitHub build,
                               # then flip back): also emit the end-of-season keeper snapshot (ESPN id +
                               # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
@@ -48,16 +49,6 @@ PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse th
 STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
-
-# Season standings payouts — update each year after the playoffs finish.
-# Set to {} while the season is in progress; fill in once final standings are known.
-SEASON_STANDINGS = {
-    1: {"team": "Roookers and Blow",          "prize": 950},
-    2: {"team": "Dumpster Fire",              "prize": 600},
-    3: {"team": "The K Cartel",              "prize": 250},
-    4: {"team": "NATy Lights",               "prize": 200},
-    "consolation": {"team": "A Divorced Man is a Freeman", "prize": 160},
-}
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
             "Agustin Ramirez":"Agustín Ramírez", "Augustin Ramirez":"Agustín Ramírez"}
@@ -317,14 +308,11 @@ def compute_standings(league):
         for rt in record_teams:
             earn[rt] = earn.get(rt, 0) + rshare
     acq_by = {td["team"]: td["acq"] for td in tds}
-    def _row(t, gross=None):
-        gr = round(earn.get(t, 0)) if gross is None else gross
-        mv = acq_by.get(t, 0)
-        return {"team": t, "gross": gr, "moves": mv, "earned": gr - mv,
+    def _row(t):
+        gross = round(earn[t]); mv = acq_by.get(t, 0)
+        return {"team": t, "gross": gross, "moves": mv, "earned": gross - mv,
                 "cats": round(leads.get(t, 0), 2), "record": t in record_teams}
-    # include ALL teams — non-winners have gross=0 but still owe their move fees
-    all_teams = {td["team"] for td in tds}
-    payout = sorted([_row(t) for t in all_teams], key=lambda x: (-x["earned"], x["team"]))
+    payout = sorted([_row(t) for t in earn], key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
                    key=lambda x: (-x["moves"], x["team"]))
     matrix = sorted(({"team": td["team"], "vals": val_by_team.get(td["team"], {})} for td in tds),
@@ -681,6 +669,17 @@ def build():
             records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM)
             standings = compute_standings(league)
             reg_over, reg_diag = regular_season_over(league)
+            if STANDINGS_DIAG:
+                print("  STANDINGS_DIAG — per-team ranking fields from ESPN:")
+                for t in (league.get("teams") or []):
+                    from espn_live import _team_name as _tn
+                    tn = _tn(t)
+                    r = (t.get("record") or {})
+                    print(f"    {tn}: playoffSeed={t.get('playoffSeed')} "
+                          f"rankCalculatedFinal={t.get('rankCalculatedFinal')} "
+                          f"rankFinal={t.get('rankFinal')} "
+                          f"wins={( r.get('overall') or {}).get('wins')} "
+                          f"losses={( r.get('overall') or {}).get('losses')}")
             live = True
             if KEEPER_DIAG:
                 try: keeper_diag = keeper_diagnostic(league)
@@ -800,7 +799,6 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
-    data["seasonStandings"] = SEASON_STANDINGS
     data["regSeason"] = {"over": reg_over, **(reg_diag or {})}
 
     # Duplicate-name set for display-only team tagging on rosters (keyof-normalized keys).
