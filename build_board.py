@@ -49,6 +49,16 @@ STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Lea
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
 
+# Season standings payouts — update each year after the playoffs finish.
+# Set to {} while the season is in progress; fill in once final standings are known.
+SEASON_STANDINGS = {
+    1: {"team": "Roookers and Blow",          "prize": 950},
+    2: {"team": "Dumpster Fire",              "prize": 600},
+    3: {"team": "The K Cartel",              "prize": 250},
+    4: {"team": "NATy Lights",               "prize": 200},
+    "consolation": {"team": "A Divorced Man is a Freeman", "prize": 160},
+}
+
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
             "Agustin Ramirez":"Agustín Ramírez", "Augustin Ramirez":"Agustín Ramírez"}
 
@@ -787,6 +797,7 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
+    data["seasonStandings"] = SEASON_STANDINGS
     data["regSeason"] = {"over": reg_over, **(reg_diag or {})}
 
     # Duplicate-name set for display-only team tagging on rosters (keyof-normalized keys).

@@ -133,6 +133,24 @@
   .junkview{position:fixed;left:0;right:0;top:0;bottom:var(--nav-h);z-index:90;
     background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch}
   .junkview[hidden]{display:none}
+  .spview{position:fixed;left:0;right:0;top:0;bottom:var(--nav-h);z-index:90;background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .spview[hidden]{display:none}
+  .spview-in{max-width:640px;margin:0 auto;padding:28px 20px 40px}
+  .spview h2{font:700 clamp(22px,6vw,30px)/1 "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.02em;margin:0 0 4px;color:var(--ink)}
+  .spview .sp-sub{color:var(--mute);font-size:13px;margin:0 0 22px}
+  .sp-inprog{padding:18px;border-radius:10px;background:var(--field);border:1px solid var(--line);color:var(--mute);font-size:14px;line-height:1.5;text-align:center}
+  .sp-table{width:100%;border-collapse:collapse;margin-bottom:24px}
+  .sp-table th{font:700 11px/1 "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);padding:0 8px 8px;text-align:left;border-bottom:1px solid var(--line)}
+  .sp-table th.num,.sp-table td.num{text-align:right}
+  .sp-table td{padding:10px 8px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
+  .sp-table tr:last-child td{border-bottom:none}
+  .sp-team{font:600 14px "Oswald",sans-serif;letter-spacing:.01em}
+  .sp-badge{display:inline-block;font:700 10px/1 "Oswald",sans-serif;letter-spacing:.05em;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;background:var(--field);color:var(--mute);border:1px solid var(--line)}
+  .sp-pos{color:var(--mute);font-size:12px;margin-top:1px}
+  .sp-amt{font-family:"Roboto Mono",monospace;font-weight:700;font-size:13.5px}
+  .sp-amt.owed{color:#e05c5c}
+  .sp-amt.paid{color:#5cb85c}
+  .sp-total{font-size:12px;color:var(--mute);text-align:right;margin-top:4px}
   .junkview-in{max-width:640px;margin:0 auto;padding:28px 20px 40px}
   .junkview h2{font:700 clamp(26px,7vw,34px)/1 "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.02em;margin:0;color:var(--ink)}
   .junkview .jd-sub{color:var(--mute);font-size:13.5px;margin:6px 0 24px}
@@ -2077,6 +2095,13 @@ setView(prefs.view==='master'?'master':'team');
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!modal.hidden) closeM(); });
 })();
 </script>
+<div class="spview" id="spView" hidden>
+  <div class="spview-in">
+    <h2>Season Payouts</h2>
+    <p class="sp-sub">What each team earns or owes after the full season.</p>
+    <div id="spContent"></div>
+  </div>
+</div>
 <nav class="snav" role="navigation" aria-label="Main">
   <button id="navHome" type="button" aria-label="Team Salaries">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18"/><path d="M6 21V9l6-5 6 5v12"/><path d="M10 21v-6h4v6"/></svg>
@@ -2111,6 +2136,11 @@ setView(prefs.view==='master'?'master':'team');
         <span class="jd-txt"><span class="jd-t">League Rules</span><span class="jd-d">Keeper &amp; auction rules</span></span>
         <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
+      <button class="jd-item" id="jrSeasonPay" type="button">
+        <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M9 3.5C10 3.2 11 3 12 3"/></svg>
+        <span class="jd-txt"><span class="jd-t">Season Payouts</span><span class="jd-d">What each team earns or owes</span></span>
+        <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
       <button class="jd-item" id="jrSettings" type="button">
         <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="jd-txt"><span class="jd-t">Settings</span><span class="jd-d">Theme, default view &amp; install</span></span>
@@ -2119,6 +2149,78 @@ setView(prefs.view==='master'?'master':'team');
     </div>
   </div>
 </div>
+<script>
+/* ---- season payouts ---- */
+(function(){
+  var view=document.getElementById('spView');
+  var content=document.getElementById('spContent');
+  function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+  function money(v){return Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});}
+
+  function render(){
+    var st=DATA.standings, ss=DATA.seasonStandings||{};
+    var locked=st&&st.locked;
+
+    // season in progress
+    if(!locked || !Object.keys(ss).length){
+      content.innerHTML='<div class="sp-inprog">⏳ The season is still in progress — check back once the playoffs have finished and the final standings are confirmed.</div>';
+      return;
+    }
+
+    // build a lookup: team name -> {rank, prize, badge}
+    var prizes={};
+    var LABELS={1:'1st place',2:'2nd place',3:'3rd place',4:'4th place','consolation':'Consolation'};
+    Object.keys(ss).forEach(function(k){
+      var e=ss[k]; prizes[e.team]={prize:e.prize||0, badge:LABELS[k]||''};
+    });
+
+    // cat pool net per team from standings
+    var catNet={};
+    (st.payout||[]).forEach(function(p){ catNet[p.team]=p.earned||0; });
+
+    // all teams from DATA.teams
+    var teams=(DATA.teams||[]).slice().sort(function(a,b){return a.team<b.team?-1:1;});
+
+    // compute rows
+    var rows=teams.map(function(t){
+      var nm=t.team;
+      var cat=catNet[nm]||0;
+      var prize=(prizes[nm]||{}).prize||0;
+      var badge=(prizes[nm]||{}).badge||'';
+      var net=cat+prize;   // positive = owed to team; negative = team still owes (shouldn't happen without entry fee)
+      return {team:nm,cat:cat,prize:prize,badge:badge,net:net};
+    });
+    rows.sort(function(a,b){return b.net-a.net;});
+
+    var totalPool=st.pool||0;
+    var html='<table class="sp-table">'
+      +'<thead><tr>'
+      +'<th>Team</th>'
+      +'<th class="num">Cat pool</th>'
+      +'<th class="num">Standings</th>'
+      +'<th class="num">Total payout</th>'
+      +'</tr></thead><tbody>';
+
+    rows.forEach(function(r){
+      var netCls=r.net<0?'owed':'paid';
+      html+='<tr>'
+        +'<td><div class="sp-team">'+esc(r.team)+(r.badge?'<span class="sp-badge">'+esc(r.badge)+'</span>':'')+'</div></td>'
+        +'<td class="num sp-amt '+(r.cat<0?'owed':r.cat>0?'paid':'')+'">'+( r.cat===0?'—':(r.cat<0?'-':'')+'\$'+money(r.cat))+'</td>'
+        +'<td class="num sp-amt '+(r.prize>0?'paid':'')+'">'+( r.prize?'\$'+money(r.prize):'—')+'</td>'
+        +'<td class="num sp-amt '+netCls+'">'+( r.net<0?'-':'')+'\$'+money(r.net)+'</td>'
+        +'</tr>';
+    });
+    html+='</tbody></table>';
+    html+='<div class="sp-total">Transaction pool: \$'+money(totalPool)+' · Category payouts = 7% per cat won + 16% best record</div>';
+    content.innerHTML=html;
+  }
+
+  function openM(){ view.hidden=false; document.body.style.overflow='hidden'; render(); }
+  function closeM(){ view.hidden=true; document.body.style.overflow=''; }
+  window.SCREENS=window.SCREENS||{};
+  window.SCREENS.openSeasonPay=openM; window.SCREENS.closeSeasonPay=closeM;
+})();
+</script>
 <script>
 /* ---- bottom-nav controller ---- */
 (function(){
@@ -2132,7 +2234,7 @@ setView(prefs.view==='master'?'master':'team');
     tabStd.classList.toggle('active',  name==='standings');
     tabJunk.classList.toggle('active', name==='junk');
   }
-  function closeSubs(){ if(S.closeWM)S.closeWM(); if(S.closeRules)S.closeRules(); if(S.closeSettings)S.closeSettings(); if(S.closeAuction)S.closeAuction(); }
+  function closeSubs(){ if(S.closeWM)S.closeWM(); if(S.closeRules)S.closeRules(); if(S.closeSettings)S.closeSettings(); if(S.closeAuction)S.closeAuction(); if(S.closeSeasonPay)S.closeSeasonPay(); }
   function showJunk(){ junk.hidden=false; document.body.style.overflow='hidden'; }
   function hideJunk(){ junk.hidden=true; }
   function goHome(){ if(S.closeStandings)S.closeStandings(); closeSubs(); hideJunk(); document.body.style.overflow=''; setActive('home'); }
@@ -2142,7 +2244,7 @@ setView(prefs.view==='master'?'master':'team');
   tabHome.addEventListener('click', goHome);
   tabStd.addEventListener('click', goStandings);
   tabJunk.addEventListener('click', goJunk);
-  var rowMap = { jrWM:'openWM', jrAuction:'openAuction', jrRules:'openRules', jrSettings:'openSettings' };
+  var rowMap = { jrWM:'openWM', jrAuction:'openAuction', jrSeasonPay:'openSeasonPay', jrRules:'openRules', jrSettings:'openSettings' };
   Object.keys(rowMap).forEach(function(id){
     var b = document.getElementById(id);
     if(b) b.addEventListener('click', function(){ var fn = window.SCREENS[rowMap[id]]; if(fn) fn(); });
