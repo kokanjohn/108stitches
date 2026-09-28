@@ -317,11 +317,14 @@ def compute_standings(league):
         for rt in record_teams:
             earn[rt] = earn.get(rt, 0) + rshare
     acq_by = {td["team"]: td["acq"] for td in tds}
-    def _row(t):
-        gross = round(earn[t]); mv = acq_by.get(t, 0)
-        return {"team": t, "gross": gross, "moves": mv, "earned": gross - mv,
+    def _row(t, gross=None):
+        gr = round(earn.get(t, 0)) if gross is None else gross
+        mv = acq_by.get(t, 0)
+        return {"team": t, "gross": gr, "moves": mv, "earned": gr - mv,
                 "cats": round(leads.get(t, 0), 2), "record": t in record_teams}
-    payout = sorted([_row(t) for t in earn], key=lambda x: (-x["earned"], x["team"]))
+    # include ALL teams — non-winners have gross=0 but still owe their move fees
+    all_teams = {td["team"] for td in tds}
+    payout = sorted([_row(t) for t in all_teams], key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
                    key=lambda x: (-x["moves"], x["team"]))
     matrix = sorted(({"team": td["team"], "vals": val_by_team.get(td["team"], {})} for td in tds),
