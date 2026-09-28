@@ -2169,23 +2169,31 @@ setView(prefs.view==='master'?'master':'team');
     var prizes={};
     var LABELS={'1':'1st place','2':'2nd place','3':'3rd place','4':'4th place','consolation':'Consolation'};
     Object.keys(ss).forEach(function(k){
-      var e=ss[k]; if(e&&e.team) prizes[e.team]={prize:e.prize||0, badge:LABELS[String(k)]||''};
+      var e=ss[k]; if(e&&e.team) prizes[e.team]={prize:e.prize||0,badge:LABELS[String(k)]||''};
     });
-    // use standings.payout as authoritative team list — correct names, has gross/moves/earned
+    // index payout by team name (only cat winners are here currently)
+    var payIdx={};
+    (st.payout||[]).forEach(function(p){ payIdx[p.team]=p; });
+    // st.moves has ALL 16 teams — use it as the master list
+    var mvIdx={};
+    (st.moves||[]).forEach(function(m){ mvIdx[m.team]=m.moves||0; });
+    // build master team set: union of moves + payout + prizes
+    var teamSet={};
+    (st.moves||[]).forEach(function(m){ teamSet[m.team]=1; });
+    (st.payout||[]).forEach(function(p){ teamSet[p.team]=1; });
+    Object.keys(prizes).forEach(function(nm){ teamSet[nm]=1; });
     var totalPool=st.pool||0;
-    var rows=(st.payout||[]).map(function(p){
-      var pr=prizes[p.team]||{prize:0,badge:''};
-      return {team:p.team, gross:p.gross!=null?p.gross:0, moves:p.moves!=null?p.moves:0,
-              cat:p.earned!=null?p.earned:0, cats:p.cats||0,
-              prize:pr.prize, badge:pr.badge, net:(p.earned!=null?p.earned:0)+pr.prize};
-    });
-    // include prize winners not in standings.payout (e.g. consolation winner with 0 cats)
-    Object.keys(prizes).forEach(function(nm){
-      if(!rows.some(function(r){return r.team===nm;}))
-        rows.push({team:nm,gross:0,moves:0,cat:0,cats:0,prize:prizes[nm].prize,badge:prizes[nm].badge,net:prizes[nm].prize});
+    var rows=Object.keys(teamSet).map(function(nm){
+      var p=payIdx[nm]||{};
+      var pr=prizes[nm]||{prize:0,badge:''};
+      var moves=mvIdx[nm]!=null?mvIdx[nm]:(p.moves!=null?p.moves:0);
+      var gross=p.gross!=null?p.gross:0;
+      var cat=gross-moves;
+      var cats=p.cats||0;
+      return {team:nm,moves:moves,gross:gross,cat:cat,cats:cats,
+              prize:pr.prize,badge:pr.badge,net:cat+pr.prize};
     });
     rows.sort(function(a,b){ return b.net-a.net||a.team.localeCompare(b.team); });
-
     function fmt(v,showZero){
       if(v===0) return showZero?'<span class="sp-amt">$0</span>':'&mdash;';
       return v<0?'<span class="sp-amt owed">-$'+money(-v)+'</span>':'<span class="sp-amt paid">$'+money(v)+'</span>';
