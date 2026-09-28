@@ -40,7 +40,6 @@ AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
-STANDINGS_DIAG       = True   # Log per-team ranking fields from ESPN to confirm auto-detection. Set False once confirmed.
 EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip for ONE live GitHub build,
                               # then flip back): also emit the end-of-season keeper snapshot (ESPN id +
                               # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
@@ -49,6 +48,12 @@ PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse th
 STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
+
+# Season standings prize map — keyed by final rank from ESPN's rankCalculatedFinal.
+# Teams are auto-detected each year; only edit these amounts if the payout structure changes.
+# Rank 9 = consolation bracket winner (best of the bottom half in a 16-team league).
+SEASON_PRIZE_MAP = {1: 950, 2: 600, 3: 250, 4: 200, 9: 160}
+CONSOLATION_RANK = 9
 
 NAME_FIX = {"Jak Caglianone":"Jac Caglianone", "Sam Basallo":"Samuel Basallo",
             "Agustin Ramirez":"Agustín Ramírez", "Augustin Ramirez":"Agustín Ramírez"}
@@ -309,10 +314,11 @@ def compute_standings(league):
             earn[rt] = earn.get(rt, 0) + rshare
     acq_by = {td["team"]: td["acq"] for td in tds}
     def _row(t):
-        gross = round(earn[t]); mv = acq_by.get(t, 0)
+        gross = round(earn.get(t, 0)); mv = acq_by.get(t, 0)
         return {"team": t, "gross": gross, "moves": mv, "earned": gross - mv,
                 "cats": round(leads.get(t, 0), 2), "record": t in record_teams}
-    payout = sorted([_row(t) for t in earn], key=lambda x: (-x["earned"], x["team"]))
+    all_teams = {td["team"] for td in tds}
+    payout = sorted([_row(t) for t in all_teams], key=lambda x: (-x["earned"], x["team"]))
     moves = sorted([{"team": td["team"], "moves": td["acq"]} for td in tds],
                    key=lambda x: (-x["moves"], x["team"]))
     matrix = sorted(({"team": td["team"], "vals": val_by_team.get(td["team"], {})} for td in tds),
@@ -669,17 +675,6 @@ def build():
             records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM)
             standings = compute_standings(league)
             reg_over, reg_diag = regular_season_over(league)
-            if STANDINGS_DIAG:
-                print("  STANDINGS_DIAG — per-team ranking fields from ESPN:")
-                for t in (league.get("teams") or []):
-                    from espn_live import _team_name as _tn
-                    tn = _tn(t)
-                    r = (t.get("record") or {})
-                    print(f"    {tn}: playoffSeed={t.get('playoffSeed')} "
-                          f"rankCalculatedFinal={t.get('rankCalculatedFinal')} "
-                          f"rankFinal={t.get('rankFinal')} "
-                          f"wins={( r.get('overall') or {}).get('wins')} "
-                          f"losses={( r.get('overall') or {}).get('losses')}")
             live = True
             if KEEPER_DIAG:
                 try: keeper_diag = keeper_diagnostic(league)
@@ -799,6 +794,23 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
+    # Auto-derive season standings from ESPN's rankCalculatedFinal (populated once playoffs finish).
+    season_standings = {}
+    if live and not stale:
+        try:
+            rank_labels = {1: "1", 2: "2", 3: "3", 4: "4", CONSOLATION_RANK: "consolation"}
+            from espn_live import _team_name as _tn
+            for t in (league.get("teams") or []):
+                rank = t.get("rankCalculatedFinal") or 0
+                if rank in SEASON_PRIZE_MAP:
+                    lbl = rank_labels[rank]
+                    season_standings[lbl] = {"team": _tn(t), "prize": SEASON_PRIZE_MAP[rank]}
+            if season_standings:
+                print(f"  season standings: auto-detected {len(season_standings)} finishers from ESPN — "
+                      + ", ".join(f"{k}: {v['team']}" for k,v in sorted(season_standings.items())))
+        except Exception as _e:
+            print(f"  season standings auto-detect failed: {_e}")
+    data["seasonStandings"] = season_standings
     data["regSeason"] = {"over": reg_over, **(reg_diag or {})}
 
     # Duplicate-name set for display-only team tagging on rosters (keyof-normalized keys).
