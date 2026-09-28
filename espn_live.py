@@ -87,8 +87,8 @@ def current_rosters(league, owner_alias=None):
                 continue
             elig, is_pitcher = eligibility(pl.get("eligibleSlots"))
             out.append({
-                "owner": person, "team": _team_name(t), "player": name,
-                "player_id": pl.get("id"),
+                "owner": person, "team": _team_name(t), "team_id": t.get("id"),
+                "player": name, "player_id": pl.get("id"),
                 "acq": (e.get("acquisitionType") or "").upper(),
                 "mlb": PRO_TEAM.get(pl.get("proTeamId"), ""),
                 "slot_id": e.get("lineupSlotId"),

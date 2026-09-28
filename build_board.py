@@ -192,6 +192,7 @@ def build_from_espn(rosters, index, OWNER_TEAM):
         if sp: matched += 1
         tag = classify(acq, sp, owner)
         team = e["team"] or OWNER_TEAM.get(owner, owner)     # ESPN's current team name wins
+        team_id = e.get("team_id")
         s = e.get("slot_id"); is_pit = e.get("is_pitcher")
         grp = "pit" if (s in (13,14,15) or (s in (16,17) and is_pit)) else "bat"
         p = {**{y: (sp["p"][y] if sp else None) for y in (2022,2023,2024,2025)},
@@ -204,7 +205,7 @@ def build_from_espn(rosters, index, OWNER_TEAM):
                "kept": tag == "kept", "tag": tag, "p": p}
         if EMIT_KEEPER_SNAPSHOT: rec["id"] = e.get("player_id")
         records.append(rec)
-        t = teams.setdefault(team, {"team": team, "owner": owner, "count": 0, "kept": 0, "total2026": 0})
+        t = teams.setdefault(team, {"team": team, "owner": owner, "espnId": team_id, "count": 0, "kept": 0, "total2026": 0})
         t["count"] += 1; t["kept"] += 1 if tag == "kept" else 0
         if p[2026]: t["total2026"] += p[2026]
     return records, teams, matched
@@ -274,7 +275,7 @@ def compute_standings(league):
             w, l, ti = o.get("wins", 0) or 0, o.get("losses", 0) or 0, o.get("ties", 0) or 0
             g = w + l + ti
             pct = (w + 0.5 * ti) / g if g else 0.0
-        tds.append({"team": tname(t), "vals": t.get("valuesByStat") or {},
+        tds.append({"team": tname(t), "espnId": t.get("id"), "vals": t.get("valuesByStat") or {},
                     "acq": tc.get("acquisitions") or 0,
                     "pct": pct or 0.0, "wins": o.get("wins", 0) or 0})
     total_moves = sum(td["acq"] for td in tds)
@@ -794,6 +795,7 @@ def build():
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
+    data["teamById"] = {str(t["espnId"]): t["team"] for t in (teams_out if isinstance(teams_out, list) else list(teams_out)) if t.get("espnId") is not None}
     # Auto-derive season standings from ESPN's rankCalculatedFinal (populated once playoffs finish).
     season_standings = {}
     if live and not stale:
@@ -841,7 +843,7 @@ def build():
                     data["dupeNames"] = sorted(dupe_keys | pool_dupes)
             # per-team budget inputs: keeper count + committed 2027 salary (kept players)
             tmap = {t["team"]: {"team": t["team"], "owner": t.get("owner", ""),
-                                "keeperCount": 0, "keeperSalary2027": 0} for t in teams_out}
+                                "espnId": t.get("espnId"), "keeperCount": 0, "keeperSalary2027": 0} for t in teams_out}
             for r in records:
                 if r.get("kept") and r["team"] in tmap:
                     tmap[r["team"]]["keeperCount"] += 1

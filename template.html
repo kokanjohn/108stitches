@@ -1260,6 +1260,7 @@ $('#bars').addEventListener('keydown',e=>{
   const view=document.getElementById('auctionView');
   let players=[], teams=null, selected=null, picksNow={}, dragKey=null;
   let ROSTERED_IDS=new Set();
+  const teamById=DATA.teamById||{};  // espnId -> current team name
 
   async function loadData(){
     if(teams) return;
@@ -1273,8 +1274,8 @@ $('#bars').addEventListener('keydown',e=>{
     const net={};
     Object.values(wm||{}).forEach(e=>{
       const amt=parseFloat(e.amount)||0;
-      if(e.seller) net[e.seller]=(net[e.seller]||0)+amt;
-      if(e.buyer)  net[e.buyer]=(net[e.buyer]||0)-amt;
+      const sk=e.sellerId||e.seller; if(sk) net[sk]=(net[sk]||0)+amt;
+      const bk=e.buyerId||e.buyer;   if(bk) net[bk]=(net[bk]||0)-amt;
     });
     return net;
   }
@@ -1449,7 +1450,7 @@ $('#bars').addEventListener('keydown',e=>{
   /* ---- board ---- */
   function fillWinners(tks){
     const sel=document.getElementById('aucWinner'), cur=sel.value;
-    sel.innerHTML='<option value="">Winning team…</option>'+tks.map(t=>`<option value="${esc(t.team)}">${esc(t.team)}</option>`).join('');
+    sel.innerHTML='<option value="">Winning team…</option>'+tks.map(t=>`<option value="${esc(String(t.espnId||t.team))}">${esc(t.team)}</option>`).join('');
     sel.value=cur;
   }
   const ROSTER_TEMPLATE=['C','1B','2B','SS','3B','MI','CI','OF','OF','OF','OF','UT','UT','P','P','SP','SP','SP','SP','RP','RP','BE','BE','BE','BE','BE'];
@@ -1628,7 +1629,7 @@ $('#bars').addEventListener('keydown',e=>{
     const startBudget={}, openBase={};
     (teams||[]).forEach(t=>{
       const ks=KEEPERS_READY?(t.keeperSalary2027||0):0, kc=KEEPERS_READY?(t.keeperCount||0):0;
-      startBudget[t.team]=BUDGET+(net[t.team]||0)-ks;
+      const _eid=String(t.espnId||""); startBudget[t.team]=BUDGET+(net[_eid]||0)+(net[t.team]||0)-ks;
       openBase[t.team]=ROSTER-kc;
     });
 
@@ -1745,7 +1746,8 @@ $('#bars').addEventListener('keydown',e=>{
   async function assign(){
     if(!selected){ flash('Pick a player first'); return; }
     const bid=parseInt(document.getElementById('aucBid').value,10);
-    const team=document.getElementById('aucWinner').value;
+    const aucWinVal=document.getElementById('aucWinner').value;
+    const team=teamById[aucWinVal]||aucWinVal;
     if(!team){ flash('Choose the winning team'); return; }
     if(!(bid>=1)){ flash('Enter a bid of $1 or more'); return; }
     const pick={player:selected.name, playerId:selected.id||null, pos:selected.pos||'', mlb:selected.mlb||'', team, bid, ts:Date.now()};
@@ -2004,8 +2006,9 @@ setView(prefs.view==='master'?'master':'team');
     return false;
   }
 
-  [...DATA.teams].map(t=>t.team).sort((a,b)=>a.localeCompare(b)).forEach(t=>{
-    sellerSel.appendChild(new Option(t,t)); buyerSel.appendChild(new Option(t,t));
+  [...DATA.teams].sort((a,b)=>a.team.localeCompare(b.team)).forEach(t=>{
+    const id=String(t.espnId||t.team), nm=t.team;
+    sellerSel.appendChild(new Option(nm,id)); buyerSel.appendChild(new Option(nm,id));
   });
 
   const api=(path,opts)=>fetch(`${DB}/${path}.json`,opts);
@@ -2022,13 +2025,13 @@ setView(prefs.view==='master'?'master':'team');
   function renderRows(){
     emptyEl.style.display=current.length?'none':'block';
     rowsEl.innerHTML=current.map(r=> r.id===editingId ? `<tr data-id="${r.id}">
-        <td data-label="Seller"><input class="e-seller" value="${e2(r.seller)}"></td>
-        <td data-label="Buyer"><input class="e-buyer" value="${e2(r.buyer)}"></td>
+        <td data-label="Seller"><input class="e-seller" value="${e2(r.sellerId?teamById[r.sellerId]||r.seller:r.seller)}"></td>
+        <td data-label="Buyer"><input class="e-buyer" value="${e2(r.buyerId?teamById[r.buyerId]||r.buyer:r.buyer)}"></td>
         <td data-label="Amount"><input class="e-amount" value="${e2(r.amount)}"></td>
         <td data-label="Notes"><input class="e-notes" value="${e2(r.notes)}"></td>
         <td class="act"><button class="wm-ico save" data-act="savee">Save</button><button class="wm-ico" data-act="cancel">Cancel</button></td>
       </tr>` : `<tr data-id="${r.id}">
-        <td data-label="Seller">${e2(r.seller)}</td><td data-label="Buyer">${e2(r.buyer)}</td>
+        <td data-label="Seller">${e2(r.sellerId?teamById[r.sellerId]||r.seller:r.seller)}</td><td data-label="Buyer">${e2(r.buyerId?teamById[r.buyerId]||r.buyer:r.buyer)}</td>
         <td class="amt" data-label="Amount">${e2(r.amount)}</td><td data-label="Notes">${e2(r.notes)}</td>
         <td class="act"><button class="wm-ico" data-act="edit">Edit</button><button class="wm-ico del" data-act="del">Delete</button></td>
       </tr>`).join('');
@@ -2040,7 +2043,10 @@ setView(prefs.view==='master'?'master':'team');
     if(!amount){ toast('Enter an amount'); return; }
     if(!gate()) return;
     try{
-      await api(PATH,{method:'POST',body:JSON.stringify({seller,buyer,amount,notes,ts:Date.now()})});
+      const selId=sellerSel.value, buyId=buyerSel.value;
+      const selNm=teamById[selId]||sellerSel.options[sellerSel.selectedIndex]?.text||selId;
+      const buyNm=teamById[buyId]||buyerSel.options[buyerSel.selectedIndex]?.text||buyId;
+      await api(PATH,{method:'POST',body:JSON.stringify({sellerId:selId,buyerId:buyId,seller:selNm,buyer:buyNm,amount,notes,ts:Date.now()})});
       sellerSel.value=''; buyerSel.value=''; amountIn.value=''; notesIn.value='';
       await load(); toast('Transaction added');
     }catch(e){ toast('Could not save — check your connection'); }
@@ -2074,7 +2080,7 @@ setView(prefs.view==='master'?'master':'team');
 
   document.getElementById('wmExport').addEventListener('click',()=>{
     if(!current.length){ toast('Nothing to export yet'); return; }
-    const rows=current.map(r=>({Seller:r.seller,Buyer:r.buyer,Amount:r.amount,Notes:r.notes,
+    const rows=current.map(r=>({Seller:r.sellerId?teamById[r.sellerId]||r.seller:r.seller,Buyer:r.buyerId?teamById[r.buyerId]||r.buyer:r.buyer,Amount:r.amount,Notes:r.notes,
       Logged:new Date(r.ts||Date.now()).toLocaleString('en-US')}));
     const ws=XLSX.utils.json_to_sheet(rows), wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Winter Meetings');
