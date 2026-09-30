@@ -316,7 +316,8 @@ def compute_standings(league):
     acq_by = {td["team"]: td["acq"] for td in tds}
     def _row(t):
         gross = round(earn.get(t, 0)); mv = acq_by.get(t, 0)
-        return {"team": t, "gross": gross, "moves": mv, "earned": gross - mv,
+        eid = next((td["espnId"] for td in tds if td["team"] == t), None)
+        return {"team": t, "espnId": eid, "gross": gross, "moves": mv, "earned": gross - mv,
                 "cats": round(leads.get(t, 0), 2), "record": t in record_teams}
     all_teams = {td["team"] for td in tds}
     payout = sorted([_row(t) for t in all_teams], key=lambda x: (-x["earned"], x["team"]))
@@ -596,8 +597,8 @@ def make_standings_lock(standings, locked_at):
     and the stat cards. Dollars are re-derived live each build from the current pool."""
     rt = standings.get("recordTeams") or []
     rfrac = (1.0 / len(rt)) if rt else 0.0
-    alloc = [{"team": p["team"], "cats": p["cats"],
-              "recordFrac": (rfrac if p.get("record") else 0.0)}
+    alloc = [{"team": p["team"], "espnId": p.get("espnId"), "cats": p["cats"],
+              "recordFrac": (rfrac if p.get("record") else 0.0), "record": bool(p.get("record"))}
              for p in standings.get("payout", [])]
     return {"lockedAt": locked_at, "season": SEASON,
             "categories": standings.get("categories", []),
@@ -614,8 +615,9 @@ def apply_standings_lock(standings, lock):
     for a in lock.get("alloc", []):
         gross = round(a.get("cats", 0) * slice_ + a.get("recordFrac", 0.0) * rec_share)
         mv = mv_by.get(a["team"], 0)
-        payout.append({"team": a["team"], "gross": gross, "moves": mv, "earned": gross - mv,
-                       "cats": a.get("cats", 0), "record": a["team"] in rt})
+        payout.append({"team": a["team"], "espnId": a.get("espnId"), "gross": gross, "moves": mv,
+                       "earned": gross - mv, "cats": a.get("cats", 0),
+                       "record": a["team"] in rt or bool(a.get("record"))})
     payout.sort(key=lambda x: (-x["earned"], x["team"]))
     out = dict(standings)
     out["categories"] = lock.get("categories", standings.get("categories", []))
@@ -806,7 +808,7 @@ def build():
                 rank = t.get("rankCalculatedFinal") or 0
                 if rank in SEASON_PRIZE_MAP:
                     lbl = rank_labels[rank]
-                    season_standings[lbl] = {"team": _tn(t), "prize": SEASON_PRIZE_MAP[rank]}
+                    season_standings[lbl] = {"team": _tn(t), "espnId": t.get("id"), "prize": SEASON_PRIZE_MAP[rank]}
             if season_standings:
                 print(f"  season standings: auto-detected {len(season_standings)} finishers from ESPN — "
                       + ", ".join(f"{k}: {v['team']}" for k,v in sorted(season_standings.items())))
