@@ -40,7 +40,7 @@ AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
-SETTINGS_DIAG        = False  # OFF by default. Flip True for ONE live build to log the full ESPN settings
+SETTINGS_DIAG        = True  # OFF by default. Flip True for ONE live build to log the full ESPN settings
                               # object — lets us identify the keeper deadline field name. Flip back after.
 EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip for ONE live GitHub build,
                               # then flip back): also emit the end-of-season keeper snapshot (ESPN id +
