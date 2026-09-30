@@ -40,8 +40,6 @@ AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
-SETTINGS_DIAG        = True  # OFF by default. Flip True for ONE live build to log the full ESPN settings
-                              # object — lets us identify the keeper deadline field name. Flip back after.
 EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip for ONE live GitHub build,
                               # then flip back): also emit the end-of-season keeper snapshot (ESPN id +
                               # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
@@ -664,6 +662,7 @@ def build():
     keeper_diag = None
     rosters = None
     reg_over = None; reg_diag = None
+    keepers_ready = False
     if USE_ESPN:
         target = ESPN_URL_OVERRIDE or (
             f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{ESPN_SEASON}"
@@ -689,19 +688,23 @@ def build():
             print(f"  standings: {len(standings['categories'])} categories, "
                   f"{standings['totalMoves']} total moves (${standings['pool']} pool)")
             print(f"  regular-season check: over={reg_over}  {reg_diag}")
-            if SETTINGS_DIAG:
-                import pprint
-                raw_settings = league.get("settings") or {}
-                print("  SETTINGS_DIAG — full ESPN settings object:")
-                pprint.pprint(raw_settings, width=120, depth=4)
-                acq = raw_settings.get("acquisitionSettings") or {}
-                ros = raw_settings.get("rosterSettings") or {}
-                trade = raw_settings.get("tradeSettings") or {}
-                draft = raw_settings.get("draftSettings") or {}
-                print(f"  acquisitionSettings keys: {sorted(acq.keys())}")
-                print(f"  rosterSettings keys:      {sorted(ros.keys())}")
-                print(f"  tradeSettings keys:       {sorted(trade.keys())}")
-                print(f"  draftSettings keys:       {sorted(draft.keys())}")
+            # keeper deadline: read live from ESPN draftSettings.keeperDeadlineFutureDate each build
+            _ds = (league.get("settings") or {}).get("draftSettings") or {}
+            _kd_ms = _ds.get("keeperDeadlineFutureDate") or 0
+            if _kd_ms:
+                try:
+                    from datetime import datetime as _dt2
+                    from zoneinfo import ZoneInfo as _ZI2
+                    _kd = _dt2.fromtimestamp(_kd_ms / 1000, tz=_ZI2("America/New_York"))
+                    _now_et = _dt2.now(_ZI2("America/New_York"))
+                    keepers_ready = _now_et >= _kd
+                    print(f"  keeper deadline: {_kd.strftime('%-m/%-d/%Y %-I:%M %p ET')} — keepers_ready={keepers_ready}")
+                except Exception as _ke:
+                    keepers_ready = len(rosters) > 0 and (len(rosters) / 16) < 15
+                    print(f"  keeper deadline: parse error ({_ke}) — roster-size fallback, keepers_ready={keepers_ready}")
+            else:
+                keepers_ready = len(rosters) > 0 and (len(rosters) / 16) < 15
+                print(f"  keeper deadline: not in ESPN settings — roster-size fallback ({len(rosters)/16:.1f} avg), keepers_ready={keepers_ready}")
         except Exception as e:
             live_error = f"{type(e).__name__}: {e}"
             if isinstance(e, urllib.error.HTTPError):
@@ -811,6 +814,7 @@ def build():
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
     data["teamById"] = {str(t["espnId"]): t["team"] for t in (teams_out if isinstance(teams_out, list) else list(teams_out)) if t.get("espnId") is not None}
+    data["keepers_ready"] = keepers_ready if live and not stale else False
     # Auto-derive season standings from ESPN's rankCalculatedFinal (populated once playoffs finish).
     season_standings = {}
     if live and not stale:

@@ -143,17 +143,6 @@
   .sp-team{font:600 14px "Oswald",sans-serif;letter-spacing:.01em}
   .sp-badge{display:inline-block;font:700 10px/1 "Oswald",sans-serif;letter-spacing:.05em;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;background:var(--field);color:var(--mute);border:1px solid var(--line)}
   .sp-pos{color:var(--mute);font-size:12px;margin-top:1px}
-  .sp-table tbody tr{cursor:pointer;transition:background .12s}
-  .sp-table tbody tr:hover{background:var(--field)}
-  .sp-detail{margin:0 0 20px;border-radius:10px;background:var(--field);border:1px solid var(--line);overflow:hidden}
-  .sp-detail-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px 10px;border-bottom:1px solid var(--line)}
-  .sp-detail-title{font:700 14px/1 "Oswald",sans-serif;letter-spacing:.02em;text-transform:uppercase;color:var(--ink)}
-  .sp-detail-close{background:none;border:0;cursor:pointer;color:var(--mute);font-size:18px;line-height:1;padding:0 2px}
-  .sp-detail-body{padding:12px 14px 14px}
-  .sp-detail-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:13px;border-bottom:1px solid var(--line)}
-  .sp-detail-row:last-child{border-bottom:none;font-weight:700;padding-top:8px}
-  .sp-detail-label{color:var(--mute)}
-  .sp-detail-val{font-family:"Roboto Mono",monospace;font-size:12.5px}
   .sp-amt{font-family:"Roboto Mono",monospace;font-weight:700;font-size:13.5px}
   .sp-amt.owed{color:#e05c5c}
   .sp-amt.paid{color:#5cb85c}
@@ -1267,7 +1256,7 @@ $('#bars').addEventListener('keydown',e=>{
   const RELAY="https://espn-relay.baseball-gm.workers.dev";  // Cloudflare Worker (ESPN relay + card search)
   const BUDGET=290, ROSTER=26;
   const cardCache={};                   // in-memory cache for this session (by id or write-in name)
-  const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
+  const KEEPERS_READY=!!(DATA.keepers_ready);  // set live from ESPN keeperDeadlineFutureDate            // 2027 keepers aren't declared/readable yet — treat as pending
   const view=document.getElementById('auctionView');
   let players=[], teams=null, selected=null, picksNow={}, dragKey=null;
   let ROSTERED_IDS=new Set();
@@ -1814,7 +1803,7 @@ $('#bars').addEventListener('keydown',e=>{
     editKey=key;
     document.getElementById('editPname').textContent=`${p.player} · $${p.bid} · ${p.team}`;
     document.getElementById('editBid').value=parseInt(p.bid,10)||'';
-    document.getElementById('editTeam').innerHTML=(teams||[]).map(t=>`<option value="${esc(String(t.espnId||t.team))}"${(t.espnId&&String(t.espnId)===String(p.espnId||''))||t.team===p.team?' selected':''}>${esc(t.team)}</option>`).join('');
+    document.getElementById('editTeam').innerHTML=(teams||[]).map(t=>`<option value="${esc(t.team)}"${t.team===p.team?' selected':''}>${esc(t.team)}</option>`).join('');
     document.getElementById('editModal').hidden=false;
     document.getElementById('editBid').focus();
   }
@@ -1822,8 +1811,7 @@ $('#bars').addEventListener('keydown',e=>{
   async function saveEdit(){
     if(!editKey) return;
     const bid=parseInt(document.getElementById('editBid').value,10);
-    const editWinVal=document.getElementById('editTeam').value;
-    const team=teamById[editWinVal]||editWinVal;
+    const team=document.getElementById('editTeam').value;
     if(!(bid>=1)){ flash('Bid must be $1 or more'); return; }
     if(!team){ flash('Choose a team'); return; }
     const prev=picksNow[editKey]||{};
@@ -2183,26 +2171,38 @@ setView(prefs.view==='master'?'master':'team');
       content.innerHTML='<div class="sp-inprog">&#9203; The season is still in progress — check back once the playoffs have finished and the final standings are confirmed.</div>';
       return;
     }
+    // all known ESPN team names (from moves, which has all 16)
     var allTeams=(st.moves||[]).map(function(m){return m.team;});
-    function fuzzyMatch(name,candidates){
-      var n=name.toLowerCase().replace(/[^a-z0-9]/g,''); var best=null,bestScore=-1;
-      candidates.forEach(function(c){ var cn=c.toLowerCase().replace(/[^a-z0-9]/g,'');
-        var matches=0,ci=0;
-        for(var ni=0;ni<n.length&&ci<cn.length;ni++){ if(n[ni]===cn[ci]){matches++;ci++;} }
-        var score=matches/Math.max(n.length,cn.length); if(score>bestScore){bestScore=score;best=c;} });
+    // fuzzy match: find the closest ESPN team name to a given string
+    function fuzzyMatch(name, candidates){
+      var n=name.toLowerCase().replace(/[^a-z0-9]/g,'');
+      var best=null, bestScore=-1;
+      candidates.forEach(function(c){
+        var cn=c.toLowerCase().replace(/[^a-z0-9]/g,'');
+        // score: length of longest common subsequence-ish via shared chars
+        var matches=0, ci=0;
+        for(var ni=0;ni<n.length&&ci<cn.length;ni++){
+          if(n[ni]===cn[ci]){matches++;ci++;}
+        }
+        var score=matches/Math.max(n.length,cn.length);
+        if(score>bestScore){bestScore=score;best=c;}
+      });
       return bestScore>0.6?best:null;
     }
-    // prize lookup: use espnId (rename-proof) when available, fall back to fuzzy name match
+    // prize lookup: fuzzy-match SEASON_STANDINGS names to real ESPN team names
     var prizes={};
     var LABELS={'1':'1st place','2':'2nd place','3':'3rd place','4':'4th place','consolation':'Consolation'};
-    var idToName={}; (DATA.teams||[]).forEach(function(t){ if(t.espnId) idToName[String(t.espnId)]=t.team; });
     Object.keys(ss).forEach(function(k){
       var e=ss[k]; if(!e||!e.team) return;
-      var nm=e.espnId?(idToName[String(e.espnId)]||e.team):(fuzzyMatch(e.team,allTeams)||e.team);
-      prizes[nm]={prize:e.prize||0, badge:LABELS[String(k)]||''};
+      var matched=fuzzyMatch(e.team, allTeams)||e.team;
+      prizes[matched]={prize:e.prize||0, badge:LABELS[String(k)]||''};
     });
-    var payIdx={}; (st.payout||[]).forEach(function(p){ payIdx[p.team]=p; });
-    var mvIdx={}; (st.moves||[]).forEach(function(m){ mvIdx[m.team]=m.moves||0; });
+    // index payout and moves by team name
+    var payIdx={};
+    (st.payout||[]).forEach(function(p){ payIdx[p.team]=p; });
+    var mvIdx={};
+    (st.moves||[]).forEach(function(m){ mvIdx[m.team]=m.moves||0; });
+    // master team set: union of all sources
     var teamSet={};
     (st.moves||[]).forEach(function(m){ teamSet[m.team]=1; });
     (st.payout||[]).forEach(function(p){ teamSet[p.team]=1; });
@@ -2213,47 +2213,23 @@ setView(prefs.view==='master'?'master':'team');
       var pr=prizes[nm]||{prize:0,badge:''};
       var moves=mvIdx[nm]!=null?mvIdx[nm]:(p.moves!=null?p.moves:0);
       var gross=p.gross!=null?p.gross:0;
-      var cat=gross-moves; var cats=p.cats||0; var isRecord=p.record||false;
-      var catWins=[];
-      (st.categories||[]).forEach(function(c){
-        var top=c.top3||[]; if(!top.length) return;
-        var best=top[0].value;
-        var winners=top.filter(function(x){return x.value===best;}).map(function(x){return x.team;});
-        if(winners.indexOf(nm)>=0) catWins.push({label:c.label,value:best,tied:winners.length>1,reverse:c.reverse||false});
-      });
-      return {team:nm,moves:moves,gross:gross,cat:cat,cats:cats,prize:pr.prize,
-              badge:pr.badge,record:isRecord,net:cat+pr.prize,catWins:catWins};
+      var cat=gross-moves;
+      var cats=p.cats||0;
+      return {team:nm,moves:moves,gross:gross,cat:cat,cats:cats,
+              prize:pr.prize,badge:pr.badge,net:cat+pr.prize};
     });
     rows.sort(function(a,b){ return b.net-a.net||a.team.localeCompare(b.team); });
     function fmt(v,showZero){
       if(v===0) return showZero?'<span class="sp-amt">$0</span>':'&mdash;';
       return v<0?'<span class="sp-amt owed">-$'+money(-v)+'</span>':'<span class="sp-amt paid">$'+money(v)+'</span>';
     }
-    function buildDetail(r){
-      var catShare=Math.round(totalPool*0.07); var lines='';
-      r.catWins.forEach(function(c){
-        var share=c.tied?Math.round(catShare/2):catShare;
-        lines+='<div class="sp-detail-row"><span class="sp-detail-label">'+esc(c.label)+(c.tied?' (tied)':'')+' winner</span><span class="sp-detail-val paid">$'+money(share)+'</span></div>';
-      });
-      if(r.record) lines+='<div class="sp-detail-row"><span class="sp-detail-label">Best regular-season record</span><span class="sp-detail-val paid">$'+money(Math.round(totalPool*0.16))+'</span></div>';
-      lines+='<div class="sp-detail-row"><span class="sp-detail-label">Cat pool gross</span><span class="sp-detail-val">$'+money(r.gross)+'</span></div>';
-      if(r.prize) lines+='<div class="sp-detail-row"><span class="sp-detail-label">'+esc(r.badge||'Standings prize')+'</span><span class="sp-detail-val paid">$'+money(r.prize)+'</span></div>';
-      lines+='<div class="sp-detail-row"><span class="sp-detail-label">Move fees ('+money(r.moves)+' moves @ $1)</span><span class="sp-detail-val owed">-$'+money(r.moves)+'</span></div>';
-      lines+='<div class="sp-detail-row"><span class="sp-detail-label">Net payout</span><span class="sp-detail-val">'+fmt(r.net,true)+'</span></div>';
-      return '<div class="sp-detail" id="sp-det"><div class="sp-detail-head">'
-        +'<span class="sp-detail-title">'+esc(r.team)+'</span>'
-        +'<button class="sp-detail-close" id="sp-det-close" aria-label="Close">&times;</button>'
-        +'</div><div class="sp-detail-body">'+lines+'</div></div>';
-    }
-    var openDetail=null;
-    var html='<div id="sp-det-wrap"></div><table class="sp-table"><thead><tr>'
+    var html='<table class="sp-table"><thead><tr>'
       +'<th>Team</th><th class="num">Moves</th><th class="num">Cat pool net</th>'
       +'<th class="num">Standings</th><th class="num">Total payout</th>'
       +'</tr></thead><tbody>';
-    rows.forEach(function(r,i){
-      var recordBadge=r.record?'<span class="sp-badge" style="border-color:var(--warn);color:var(--warn)">Best record</span>':'';
-      html+='<tr data-idx="'+i+'">'
-        +'<td><div class="sp-team">'+esc(r.team)+(r.badge?'<span class="sp-badge">'+esc(r.badge)+'</span>':'')+recordBadge+'</div>'
+    rows.forEach(function(r){
+      html+='<tr>'
+        +'<td><div class="sp-team">'+esc(r.team)+(r.badge?'<span class="sp-badge">'+esc(r.badge)+'</span>':'')+'</div>'
         +(r.cats?'<div class="sp-pos">'+r.cats+' cat'+(r.cats===1?'':'s')+' won</div>':'')+'</td>'
         +'<td class="num sp-amt">'+money(r.moves)+'</td>'
         +'<td class="num">'+fmt(r.cat,false)+'</td>'
@@ -2266,22 +2242,6 @@ setView(prefs.view==='master'?'master':'team');
       +' &nbsp;&middot;&nbsp; Cat pool = 7% per cat won + 16% best record'
       +' &nbsp;&middot;&nbsp; Standings: 1st $950 &middot; 2nd $600 &middot; 3rd $250 &middot; 4th $200 &middot; Consolation $160</div>';
     content.innerHTML=html;
-    content.querySelectorAll('.sp-table tbody tr').forEach(function(tr,i){
-      tr.addEventListener('click',function(){
-        var r=rows[i];
-        if(openDetail===i){
-          var d=document.getElementById('sp-det'); if(d) d.remove(); openDetail=null; return;
-        }
-        var existing=document.getElementById('sp-det'); if(existing) existing.remove();
-        var wrap=content.querySelector('#sp-det-wrap');
-        if(wrap){
-          wrap.innerHTML=buildDetail(r);
-          var cb=document.getElementById('sp-det-close');
-          if(cb) cb.addEventListener('click',function(){ var d=document.getElementById('sp-det'); if(d) d.remove(); openDetail=null; });
-          openDetail=i;
-        }
-      });
-    });
   }
 
   function openM(){ modal.hidden=false; document.body.style.overflow='hidden'; render(); }
