@@ -45,7 +45,6 @@ NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report
 # read back locally on every subsequent build — immune to network issues. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 FIREBASE_URL   = "https://stitches-fd635-default-rtdb.firebaseio.com"  # public Realtime Database — read-only for build
-SEASON_DIAG    = True  # Flip True for ONE live build to confirm the ESPN field carrying the current season year.
 STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
@@ -774,6 +773,17 @@ def build():
             raw = Path(ESPN_JSON_FILE).read_text(encoding="utf-8") if ESPN_JSON_FILE else None
             league = fetch_league(ESPN_LEAGUE_ID, ESPN_SEASON, ESPN_S2, ESPN_SWID,
                                   local_json=raw, url=(ESPN_URL_OVERRIDE or None))
+            # auto-detect SEASON from ESPN's league.seasonId
+            # SEASON in config is just a safe fallback for offline/stale builds.
+            _espn_season = league.get("seasonId")
+            if _espn_season:
+                global SEASON  # module-level rebind so all helpers see the updated value
+                _espn_season = int(_espn_season)
+                if _espn_season != SEASON:
+                    print(f"  season auto-detected: ESPN reports {_espn_season}, was {SEASON} — updating")
+                    SEASON = _espn_season
+                else:
+                    print(f"  season auto-detected: {_espn_season} ✓ (matches config)")
             rosters = current_rosters(league, OWNER_ALIAS)
             records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM, snap_by_id, snap_by_name, auction_picks)
             standings = compute_standings(league)
@@ -790,15 +800,7 @@ def build():
             print(f"  standings: {len(standings['categories'])} categories, "
                   f"{standings['totalMoves']} total moves (${standings['pool']} pool)")
             print(f"  regular-season check: over={reg_over}  {reg_diag}")
-            if SEASON_DIAG:
-                print("  SEASON_DIAG — league object season-related fields:")
-                print(f"    league.seasonId     : {league.get('seasonId')}")
-                print(f"    league.id           : {league.get('id')}")
-                st = league.get('status') or {}
-                print(f"    status keys         : {sorted(st.keys())}")
-                ds = (league.get('settings') or {}).get('draftSettings') or {}
-                print(f"    draftSettings.seasonId : {ds.get('seasonId')}")
-                print(f"    draftSettings keys  : {sorted(ds.keys())[:15]}")
+
         except Exception as e:
             live_error = f"{type(e).__name__}: {e}"
             if isinstance(e, urllib.error.HTTPError):
