@@ -531,7 +531,7 @@
 <div class="wrap">
   <details class="panel" id="salary">
     <summary>
-      <h2>2026 roster salary</h2>
+      <h2>${DATA.season} roster salary</h2>
       <span class="hint">Total spent per team on the current roster</span>
       <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
     </summary>
@@ -663,7 +663,7 @@
 </div>
 
 <footer><div class="wrap">
-  The <b>2026</b> column is this year's roster cost; <b>2027</b> is what each player would cost to keep next year. Rosters reflect who's on each team right now.
+  The <b>${DATA.season}</b> column is this year's roster cost; <b>${DATA.season+1}</b> is what each player would cost to keep next year. Rosters reflect who's on each team right now.
   <span id="livelegend"></span>
 </div></footer>
 
@@ -671,7 +671,7 @@
 <div id="auctionView" hidden>
   <div class="auc-shell">
     <div class="auc-top">
-      <h2>Live Auction<span class="auc-sub">2027 · live rosters &amp; budget</span></h2>
+      <h2>Live Auction<span class="auc-sub">${DATA.season+1} · live rosters &amp; budget</span></h2>
       <div class="auc-actions">
         <button class="btn" id="aucUndo">Undo</button>
         <button class="btn" id="aucReset">Reset</button>
@@ -1004,7 +1004,7 @@ function teamTagged(name, mlb){   // append " <MLB>" whenever the name is a know
   return (KNOWN_DUPES.has(nkey(name)) && mlb) ? `${name} ${mlb}` : name;
 }
 
-let view='team', sortCol='p2026', sortDir=-1;
+let view='team', sortCol='p'+DATA.season, sortDir=-1;
 
 function filteredRecords(){
   const q=$('#q').value.trim().toLowerCase();
@@ -1049,7 +1049,7 @@ function renderTeams(recs,q){
       <div class="tbl-scroll"><table>
         <thead><tr>
           <th class="l">Pos</th><th class="l">Player</th><th class="l">MLB</th>
-          <th>'22</th><th>'23</th><th>'24</th><th>'25</th><th class="yr">2026</th><th class="yr">2027</th>
+          ${[DATA.season-4,DATA.season-3,DATA.season-2,DATA.season-1].map(y=>`<th>'${String(y).slice(2)}</th>`).join('')}<th class="yr">${DATA.season}</th><th class="yr">${DATA.season+1}</th>
         </tr></thead>
         <tbody>${bodyRows(rows,q)}</tbody>
       </table></div>`;
@@ -1084,8 +1084,8 @@ function renderMaster(recs,q){
     <th class="sortable" data-c="p2023">'23${ar('p2023')}</th>
     <th class="sortable" data-c="p2024">'24${ar('p2024')}</th>
     <th class="sortable" data-c="p2025">'25${ar('p2025')}</th>
-    <th class="yr sortable" data-c="p2026">2026${ar('p2026')}</th>
-    <th class="yr sortable" data-c="p2027">2027${ar('p2027')}</th>
+    <th class="yr sortable" data-c="p${DATA.season}">${DATA.season}${ar(`p${DATA.season}`)}</th>
+    <th class="yr sortable" data-c="p${DATA.season+1}">${DATA.season+1}${ar(`p${DATA.season+1}`)}</th>
   </tr></thead>`;
   const body=sorted.map(r=>`<tr>
     <td class="pname">${hl(teamTagged(r.player,r.mlb),q)}</td>
@@ -1093,8 +1093,8 @@ function renderMaster(recs,q){
     <td class="team">${esc(r.team)}</td>
     <td class="mlb">${esc(r.mlb)}</td>
     ${['2022','2023','2024','2025'].map(y=>`<td class="hist">${r.p[y]??'·'}</td>`).join('')}
-    <td class="cur ${costTier(r.p['2026'])}">${r.p['2026']??'—'}</td>
-    <td class="cur ${costTier(r.p['2027'])}">${r.p['2027']??'—'}</td>
+    <td class="cur ${costTier(r.p[DATA.season])}">${r.p[DATA.season]??'—'}</td>
+    <td class="cur ${costTier(r.p[DATA.season+1])}">${r.p[DATA.season+1]??'—'}</td>
   </tr>`).join('');
   const board=$('#board');
   board.innerHTML=`<div class="master-scroll"><table class="master">${head}<tbody>${body}</tbody></table></div>`;
@@ -1140,12 +1140,12 @@ function closeExportMenu(){
 function doExport(scope){
   const recs = masterSort(scope==='filtered' ? filteredRecords() : DATA.records);
   if(!recs.length){ flash('Nothing to export'); return; }
-  const header=['Player','Pos','Team','MLB','2022','2023','2024','2025','2026','2027'];
+  const header=['Player','Pos','Team','MLB',...[DATA.season-4,DATA.season-3,DATA.season-2,DATA.season-1,DATA.season,DATA.season+1].map(String)];
   const cell=v=>(v==null?'':v);
   const aoa=[header, ...recs.map(r=>[
     r.player, r.elig||'', r.team, r.mlb||'',
     cell(r.p['2022']), cell(r.p['2023']), cell(r.p['2024']), cell(r.p['2025']),
-    cell(r.p['2026']), cell(r.p['2027'])
+    cell(r.p[DATA.season]), cell(r.p[DATA.season+1])
   ])];
   const ws=XLSX.utils.aoa_to_sheet(aoa), wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Master');
@@ -1185,8 +1185,8 @@ function rowHTML(r,q){
     <td class="pname">${hl(teamTagged(r.player,r.mlb),q)}${r.elig?` <span class="elig">(${esc(r.elig)})</span>`:''}</td>
     <td class="mlb">${esc(r.mlb)}</td>
     ${hist}
-    <td class="cur ${costTier(r.p[2026])}">${r.p[2026]??'—'}</td>
-    <td class="cur ${costTier(r.p[2027])}">${r.p[2027]??'—'}</td>
+    <td class="cur ${costTier(r.p[DATA.season])}">${r.p[DATA.season]??'—'}</td>
+    <td class="cur ${costTier(r.p[DATA.season+1])}">${r.p[DATA.season+1]??'—'}</td>
   </tr>`;
 }
 
@@ -1251,12 +1251,12 @@ $('#bars').addEventListener('keydown',e=>{
 (function(){
   const DB="https://stitches-fd635-default-rtdb.firebaseio.com";
   const WM_PATH="winterMeetings";
-  const AUCTION_PATH="auction2027";     // picks ledger
+  const AUCTION_PATH="auction"+(DATA.season+1);  // picks ledger — season-keyed, auto-advances
   const CARDS_PATH="cards_v3";          // shared cache of found card images, keyed by player id
   const RELAY="https://espn-relay.baseball-gm.workers.dev";  // Cloudflare Worker (ESPN relay + card search)
   const BUDGET=290, ROSTER=26;
   const cardCache={};                   // in-memory cache for this session (by id or write-in name)
-  const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
+  const KEEPERS_READY=!!(DATA.keepers_ready);  // set live from ESPN keeperDeadlineFutureDate
   const view=document.getElementById('auctionView');
   let players=[], teams=null, selected=null, picksNow={}, dragKey=null;
   let ROSTERED_IDS=new Set();
@@ -1498,7 +1498,7 @@ $('#bars').addEventListener('keydown',e=>{
   function computeTeam(t, net, auc){
     const wn=net[t.team]||0, spent=auc.spent[t.team]||0, won=auc.won[t.team]||0;
     const keepers=KEEPERS_READY?(t.keeperCount||0):0;
-    const keeperSal=KEEPERS_READY?(t.keeperSalary2027||0):0;
+    const keeperSal=KEEPERS_READY?(t.keeperSalaryNext||0):0;
     const remaining=BUDGET+wn-keeperSal-spent;
     const open=ROSTER-keepers-won;
     const maxBid=open>0 ? remaining-(open-1) : 0;
@@ -1534,7 +1534,7 @@ $('#bars').addEventListener('keydown',e=>{
       const canNominate=(t)=>{
         const wn=net[t.team]||0;
         const keepers=KEEPERS_READY?(t.keeperCount||0):0;
-        const keeperSal=KEEPERS_READY?(t.keeperSalary2027||0):0;
+        const keeperSal=KEEPERS_READY?(t.keeperSalaryNext||0):0;
         const remaining=BUDGET+wn-keeperSal-sp[t.team];
         const open=ROSTER-keepers-wo[t.team];
         return (open>0 ? remaining-(open-1) : 0) >= 1;   // has an open slot AND can bid ≥ $1
@@ -1583,7 +1583,7 @@ $('#bars').addEventListener('keydown',e=>{
     picksNow=picks||{};
     render(teams, net, auc);
     renderTracker(teams, net, auc);
-    status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${teams.length} teams · keepers pending 2027 roll · updated ${new Date().toLocaleTimeString()}`;
+    status.textContent=`Base $${BUDGET} · roster ${ROSTER} · ${teams.length} teams · keepers pending ${DATA.season+1} roll · updated ${new Date().toLocaleTimeString()}`;
     // Every open device keeps its own spreadsheet: auto-export whenever the picks change —
     // a new pick, an edited bid/team, a moved slot, or a removal from ANY device — not just
     // this device's Assign. Skips the initial load (baseline) and an empty sheet after a reset.
@@ -1628,7 +1628,7 @@ $('#bars').addEventListener('keydown',e=>{
     // team base values (keepers pending => salary/count 0)
     const startBudget={}, openBase={};
     (teams||[]).forEach(t=>{
-      const ks=KEEPERS_READY?(t.keeperSalary2027||0):0, kc=KEEPERS_READY?(t.keeperCount||0):0;
+      const ks=KEEPERS_READY?(t.keeperSalaryNext||0):0, kc=KEEPERS_READY?(t.keeperCount||0):0;
       const _eid=String(t.espnId||""); startBudget[t.team]=BUDGET+(net[_eid]||0)+(net[t.team]||0)-ks;
       openBase[t.team]=ROSTER-kc;
     });
