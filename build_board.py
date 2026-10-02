@@ -207,7 +207,7 @@ def build_from_espn(rosters, index, OWNER_TEAM):
         records.append(rec)
         t = teams.setdefault(team, {"team": team, "owner": owner, "espnId": team_id, "count": 0, "kept": 0, "totalSalary": 0})
         t["count"] += 1; t["kept"] += 1 if tag == "kept" else 0
-        if p[2026]: t["totalSalary"] += p[2026]
+        if p[SEASON]: t["totalSalary"] += p[SEASON]
     return records, teams, matched
 
 def team_meta(records):
@@ -215,7 +215,7 @@ def team_meta(records):
     for r in records:
         t = teams.setdefault(r["team"], {"team": r["team"], "owner": r["owner"], "count": 0, "kept": 0, "totalSalary": 0})
         t["count"] += 1; t["kept"] += 1 if r["tag"] == "kept" else 0
-        if r["p"][2026]: t["totalSalary"] += r["p"][2026]
+        if r["p"][SEASON]: t["totalSalary"] += r["p"][SEASON]
     return teams
 
 def keeper_snapshot_payload(records, built_at, season_from):
@@ -730,16 +730,16 @@ def build():
     # a freshly-auctioned player who simply has no 2025 on record.
     if not stale:
         for r in records:
-            p26, p25 = r["p"].get(2026), r["p"].get(2025)
+            p26, p25 = r["p"].get(SEASON), r["p"].get(SEASON-1)
             if p26 is None:
-                r["p"][2027] = 5
+                r["p"][SEASON+1] = 5
             elif p25 is not None and p26 > p25:
-                r["p"][2027] = 2*p26 - p25 + 1
+                r["p"][SEASON+1] = 2*p26 - p25 + 1
             else:
                 if p25 is not None:                       # stale history above a lower price -> reset
-                    for y in (2022, 2023, 2024, 2025):
+                    for y in range(SEASON-4, SEASON):
                         r["p"][y] = None
-                r["p"][2027] = p26 + 2
+                r["p"][SEASON+1] = p26 + 2
 
     keeper_cap = None
     if EMIT_KEEPER_SNAPSHOT and live and not stale:
@@ -851,7 +851,7 @@ def build():
             for r in records:
                 if r.get("kept") and r["team"] in tmap:
                     tmap[r["team"]]["keeperCount"] += 1
-                    s = r["p"].get(2027)
+                    s = r["p"].get(SEASON+1)
                     if s: tmap[r["team"]]["keeperSalaryNext"] += s
             teams_budget = sorted(tmap.values(), key=lambda x: x["team"])
             check["teams"] = teams_budget
