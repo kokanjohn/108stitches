@@ -45,6 +45,7 @@ NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report
 # read back locally on every subsequent build — immune to network issues. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 FIREBASE_URL   = "https://stitches-fd635-default-rtdb.firebaseio.com"  # public Realtime Database — read-only for build
+SEASON_DIAG    = False  # Flip True for ONE live build to confirm the ESPN field carrying the current season year.
 STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
@@ -789,6 +790,15 @@ def build():
             print(f"  standings: {len(standings['categories'])} categories, "
                   f"{standings['totalMoves']} total moves (${standings['pool']} pool)")
             print(f"  regular-season check: over={reg_over}  {reg_diag}")
+            if SEASON_DIAG:
+                print("  SEASON_DIAG — league object season-related fields:")
+                print(f"    league.seasonId     : {league.get('seasonId')}")
+                print(f"    league.id           : {league.get('id')}")
+                st = league.get('status') or {}
+                print(f"    status keys         : {sorted(st.keys())}")
+                ds = (league.get('settings') or {}).get('draftSettings') or {}
+                print(f"    draftSettings.seasonId : {ds.get('seasonId')}")
+                print(f"    draftSettings keys  : {sorted(ds.keys())[:15]}")
         except Exception as e:
             live_error = f"{type(e).__name__}: {e}"
             if isinstance(e, urllib.error.HTTPError):
