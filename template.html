@@ -787,7 +787,7 @@
 <script>
 const DATA = /*__DATA__*/;
 const $ = s => document.querySelector(s);
-const YEARS = [2022,2023,2024,2025];
+const YEARS = [DATA.season-4,DATA.season-3,DATA.season-2,DATA.season-1];
 
 /* ---- user preferences (saved per-device) ---- */
 const PREFS_KEY='stitches:prefs:v1';
@@ -1085,10 +1085,7 @@ function renderMaster(recs,q){
     <th class="l sortable" data-c="pos">Pos${ar('pos')}</th>
     <th class="l sortable" data-c="team">Team${ar('team')}</th>
     <th class="l sortable" data-c="mlb">MLB${ar('mlb')}</th>
-    <th class="sortable" data-c="p2022">'22${ar('p2022')}</th>
-    <th class="sortable" data-c="p2023">'23${ar('p2023')}</th>
-    <th class="sortable" data-c="p2024">'24${ar('p2024')}</th>
-    <th class="sortable" data-c="p2025">'25${ar('p2025')}</th>
+    ${YEARS.map(y=>`<th class="sortable" data-c="p${y}">'${String(y).slice(2)}${ar('p'+y)}</th>`).join('')}
     <th class="yr sortable" data-c="p${DATA.season}">${DATA.season}${ar(`p${DATA.season}`)}</th>
     <th class="yr sortable" data-c="p${DATA.season+1}">${DATA.season+1}${ar(`p${DATA.season+1}`)}</th>
   </tr></thead>`;
@@ -1097,7 +1094,7 @@ function renderMaster(recs,q){
     <td class="elig">${esc(r.elig||'—')}</td>
     <td class="team">${esc(r.team)}</td>
     <td class="mlb">${esc(r.mlb)}</td>
-    ${['2022','2023','2024','2025'].map(y=>`<td class="hist">${r.p[y]??'·'}</td>`).join('')}
+    ${YEARS.map(y=>`<td class="hist">${r.p[y]??'·'}</td>`).join('')}
     <td class="cur ${costTier(r.p[DATA.season])}">${r.p[DATA.season]??'—'}</td>
     <td class="cur ${costTier(r.p[DATA.season+1])}">${r.p[DATA.season+1]??'—'}</td>
   </tr>`).join('');
@@ -1149,7 +1146,7 @@ function doExport(scope){
   const cell=v=>(v==null?'':v);
   const aoa=[header, ...recs.map(r=>[
     r.player, r.elig||'', r.team, r.mlb||'',
-    cell(r.p['2022']), cell(r.p['2023']), cell(r.p['2024']), cell(r.p['2025']),
+    ...YEARS.map(y=>cell(r.p[y])),
     cell(r.p[DATA.season]), cell(r.p[DATA.season+1])
   ])];
   const ws=XLSX.utils.aoa_to_sheet(aoa), wb=XLSX.utils.book_new();
