@@ -40,10 +40,9 @@ AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
 NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report to the build log
-EMIT_KEEPER_SNAPSHOT = False  # OFF: build is byte-identical to normal. ON (flip for ONE live GitHub build,
-                              # then flip back): also emit the end-of-season keeper snapshot (ESPN id +
-                              # next-year keeper cost + last-3-kept-years history) to keeper_snapshot_<season>.json
-                              # AND an invisible, #snapshot-gated capture panel on the page. See ROLLOVER-PLAN.
+# Keeper snapshot fires automatically when ESPN signals the regular season is over (reg_over = True),
+# same trigger as the standings lock. Season-keyed file is committed to the repo by build.yml and
+# read back locally on every subsequent build — immune to network issues. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
 STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
@@ -203,7 +202,7 @@ def build_from_espn(rosters, index, OWNER_TEAM):
                "pos": (e["pos"] or (sp["pos"] if sp else "")),  # ESPN's current roster slot
                "elig": e.get("elig", ""), "grp": grp,
                "kept": tag == "kept", "tag": tag, "p": p}
-        if EMIT_KEEPER_SNAPSHOT: rec["id"] = e.get("player_id")
+        rec["id"] = e.get("player_id")  # stable ESPN id — used for keeper snapshot + rename-proofing
         records.append(rec)
         t = teams.setdefault(team, {"team": team, "owner": owner, "espnId": team_id, "count": 0, "kept": 0, "totalSalary": 0})
         t["count"] += 1; t["kept"] += 1 if tag == "kept" else 0
@@ -591,6 +590,17 @@ def read_standings_lock():
     except Exception:
         return None
 
+def read_keeper_snapshot():
+    """Read the season's keeper snapshot back from the committed repo file (write-once, then frozen)."""
+    fn = f"keeper_snapshot_{SEASON}.json"
+    try:
+        lp = HERE / fn
+        if lp.exists():
+            return json.loads(lp.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
 def make_standings_lock(standings, locked_at):
     """Freeze the ALLOCATION only: who won each category, each team's cat-fraction + record-fraction,
     and the stat cards. Dollars are re-derived live each build from the current pool."""
@@ -741,21 +751,25 @@ def build():
                         r["p"][y] = None
                 r["p"][SEASON+1] = p26 + 2
 
-    keeper_cap = None
-    if EMIT_KEEPER_SNAPSHOT and live and not stale:
-        _payload = keeper_snapshot_payload(records, built_at, SEASON)
-        _snap_json = json.dumps(_payload, ensure_ascii=False)
-        _missing = sum(1 for pp in _payload["players"] if not pp["id"])
-        try:
-            with open(f"keeper_snapshot_{SEASON}.json", "w", encoding="utf-8") as fh:
-                fh.write(_snap_json)
-            print(f"\u2713 EMIT_KEEPER_SNAPSHOT: wrote keeper_snapshot_{SEASON}.json "
-                  f"\u2014 {_payload['count']} players ({_missing} missing an ESPN id)")
-        except Exception as e:
-            print(f"  keeper snapshot: file write failed ({type(e).__name__}: {e})")
-        keeper_cap = keeper_capture_block(_snap_json)
-    elif EMIT_KEEPER_SNAPSHOT:
-        print("  keeper snapshot: skipped (needs a live ESPN build)")
+    # ---- keeper snapshot: capture once when the regular season ends, then frozen ----
+    # Same trigger as the standings lock (reg_over = True). build.yml commits the file to the
+    # repo so it's read locally forever — no network dependency, can't drift or be re-captured.
+    if reg_over is True and live and not stale:
+        _existing_snap = read_keeper_snapshot()
+        if _existing_snap is None:
+            _payload = keeper_snapshot_payload(records, built_at, SEASON)
+            _snap_json = json.dumps(_payload, ensure_ascii=False)
+            _missing = sum(1 for pp in _payload["players"] if not pp["id"])
+            try:
+                with open(f"keeper_snapshot_{SEASON}.json", "w", encoding="utf-8") as fh:
+                    fh.write(_snap_json)
+                print(f"\u2713 Keeper snapshot captured automatically (reg season over) \u2014 "
+                      f"wrote keeper_snapshot_{SEASON}.json \u2014 "
+                      f"{_payload['count']} players ({_missing} missing id)")
+            except Exception as e:
+                print(f"  keeper snapshot: write failed ({type(e).__name__}: {e})")
+        else:
+            print(f"  keeper snapshot: already captured ({_existing_snap.get('count','?')} players) \u2014 not re-capturing")
 
     # ---- category-winner lock: freeze the split once the fantasy regular season ends ----
     # Trigger is automatic: ESPN reports the regular season complete (reg_over). STANDINGS_LOCK_AT is
@@ -865,8 +879,6 @@ def build():
         except Exception as e:
             data["auctionBakeCheck"] = {"ok": False, "note": f"{type(e).__name__}: {e}"}
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/", json.dumps(data, ensure_ascii=False))
-    if EMIT_KEEPER_SNAPSHOT and keeper_cap:
-        html = html.replace("</body>", keeper_cap + "\n</body>", 1)
     OUTPUT.write_text(html, encoding="utf-8")
     src = ("ESPN live rosters" if live else
            (f"last live snapshot ({snapshot_at})" if stale else "draft-day rosters (ESPN off)"))
