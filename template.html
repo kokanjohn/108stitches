@@ -150,6 +150,7 @@
   .pay-screen .pay-check.editable:hover{opacity:.7}
   .pay-screen .pay-na{color:var(--mute);font-size:12px}
   .pay-screen .pay-amt{font-family:"Roboto Mono",monospace;font-size:12px;color:#e05c5c;display:block}
+  .pay-screen .pay-owe{font-size:11px;color:#e05c5c;margin-top:2px}
   .pay-screen .pay-summary{margin-top:14px;font-size:12.5px;color:var(--mute);text-align:right;line-height:1.6}
   .pay-screen .pay-pin-wrap{margin-bottom:16px;display:flex;gap:8px;align-items:center}
   .pay-screen .pay-pin-wrap input{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink);font-size:14px}
@@ -2315,17 +2316,31 @@ setView(prefs.view==='master'?'master':'team');
     catch(e){ console.error('payments write failed',e); }
   }
 
-  // net owed per team from standings payout (negative = owes, positive = receiving)
+  // net per team mirrors Season Payouts: cat pool earned + standings prizes
   function netByTeam(){
-    var m={}, st=DATA.standings;
+    var m={}, st=DATA.standings, ss=DATA.seasonStandings||{};
     if(!st) return m;
     var mvIdx={}, payIdx={}, ts={};
     (st.moves||[]).forEach(function(mv){ mvIdx[mv.team]=mv.moves||0; ts[mv.team]=1; });
     (st.payout||[]).forEach(function(p){ payIdx[p.team]=p; ts[p.team]=1; });
+    var prizes={}, allTeams=Object.keys(ts);
+    var idToName={}; (DATA.teams||[]).forEach(function(t){ if(t.espnId) idToName[String(t.espnId)]=t.team; });
+    function fuzzy(name,cands){
+      var n=name.toLowerCase().replace(/[^a-z0-9]/g,''),best=null,bestScore=-1;
+      cands.forEach(function(c){ var cn=c.toLowerCase().replace(/[^a-z0-9]/g,''),matches=0,ci=0;
+        for(var ni=0;ni<n.length&&ci<cn.length;ni++){if(n[ni]===cn[ci]){matches++;ci++;}}
+        var score=matches/Math.max(n.length,cn.length);if(score>bestScore){bestScore=score;best=c;}});
+      return bestScore>0.6?best:null;
+    }
+    Object.keys(ss).forEach(function(k){
+      var e=ss[k]; if(!e||!e.team) return;
+      var nm=e.espnId?(idToName[String(e.espnId)]||e.team):(fuzzy(e.team,allTeams)||e.team);
+      prizes[nm]=e.prize||0;
+    });
     Object.keys(ts).forEach(function(nm){
       var p=payIdx[nm]||{};
       var moves=mvIdx[nm]!=null?mvIdx[nm]:(p.moves!=null?p.moves:0);
-      m[nm]=(p.gross!=null?p.gross:0)-moves;
+      m[nm]=(p.gross!=null?p.gross:0)-moves+(prizes[nm]||0);
     });
     return m;
   }
@@ -2334,64 +2349,37 @@ setView(prefs.view==='master'?'master':'team');
     const [efData, eosData] = await Promise.all([dbGet('entry_fee'), dbGet('end_of_season')]);
     const ef = efData || {}, eos = eosData || {};
     const nets = netByTeam();
-    const locked = !(DATA.standings && DATA.standings.locked);
+    const seasonLocked = !!(DATA.standings && DATA.standings.locked);
     const teams = (DATA.teams||[]).slice().sort(function(a,b){ return a.team.localeCompare(b.team); });
-
-    let efOut=0, efTotal=0, eosOut=0, eosTotal=0;
-
-    let rows = '';
+    let efOut=0, efTotal=0, eosOut=0, eosTotal=0, rows='';
     teams.forEach(function(t){
       const id = String(t.espnId||t.team);
       const efPaid = !!(ef[id]);
       const net = nets[t.team];
       const owes = (net != null && net < 0);
       const eosPaid = owes ? !!(eos[id]) : null;
-
       efTotal++; if(!efPaid) efOut++;
       if(owes){ eosTotal++; if(!eosPaid) eosOut++; }
-
-      // entry fee cell
       const efMark = unlocked
         ? `<span class="pay-check editable" data-action='toggle' data-type="ef" data-id="${esc(id)}" data-paid="${efPaid}">${efPaid?'✅':'⬜'}</span>`
         : `<span class="pay-check">${efPaid?'✅':'⬜'}</span>`;
-
-      // end of season cell
       let eosCel = '';
-      if(locked){ eosCel = '<span class="pay-na">Season in progress</span>'; }
+      if(!seasonLocked){ eosCel = '<span class="pay-na">In progress</span>'; }
       else if(!owes){ eosCel = '<span class="pay-na">N/A</span>'; }
       else{
-        const amt = `<span class="pay-amt">owes $${money(-net)}</span>`;
         eosCel = unlocked
-          ? `<span class="pay-check editable" data-action='toggle' data-type="eos" data-id="${esc(id)}" data-paid="${eosPaid}">${eosPaid?'✅':'⬜'}</span>${amt}`
-          : `<span class="pay-check">${eosPaid?'✅':'⬜'}</span>${amt}`;
+          ? `<span class="pay-check editable" data-action='toggle' data-type="eos" data-id="${esc(id)}" data-paid="${eosPaid}">${eosPaid?'✅':'⬜'}</span>`
+          : `<span class="pay-check">${eosPaid?'✅':'⬜'}</span>`;
       }
-
-      rows += `<tr>
-        <td class="pay-tn">${esc(t.team)}</td>
-        <td class="ctr">${efMark}</td>
-        <td class="ctr">${eosCel}</td>
-      </tr>`;
+      const amtLine = owes ? `<div class="pay-owe">owes $${money(-net)}</div>` : '';
+      rows += `<tr><td class="pay-tn">${esc(t.team)}${amtLine}</td><td class="ctr">${efMark}</td><td class="ctr">${eosCel}</td></tr>`;
     });
-
-    const editBtn = "<button class='pay-edit-btn"+(unlocked?' unlocked':'')+"' data-action='edit'>"+(unlocked?'[Editing]':'[Edit mode]')+"</button>";
-    const summary = `<div class="pay-summary">Entry fees: ${efTotal-efOut}/${efTotal} paid &nbsp;·&nbsp; End of season: ${eosTotal-eosOut}/${eosTotal} settled</div>`;
-
-    content.innerHTML = `
-      <div class="pay-hdr">
-        <span class="pay-hdr-title">Season ${DATA.season} payments</span>
-        ${editBtn}
-      </div>
-      <table>
-        <thead><tr>
-          <th>Team</th>
-          <th class="ctr">Entry fee ($${ENTRY_FEE})</th>
-          <th class="ctr">End of season</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      ${summary}`;
-
+    const editBtn = "<button class='pay-edit-btn"+(unlocked?' unlocked':'')+"' data-action='edit'>"+(unlocked?'[Editing]':'[Edit]')+"</button>";
+    const summary = `<div class="pay-summary">Entry fees: ${efTotal-efOut}/${efTotal} paid · End of season: ${eosTotal-eosOut}/${eosTotal} settled</div>`;
+    content.innerHTML = `<div class="pay-hdr"><span class="pay-hdr-title">Season ${DATA.season} payments</span>${editBtn}</div>`
+      + `<table><thead><tr><th>Team</th><th class="ctr">$${ENTRY_FEE}</th><th class="ctr">EOS</th></tr></thead><tbody>${rows}</tbody></table>${summary}`;
   }
+
 
   // single delegated handler on content — survives content.innerHTML re-renders
   content.addEventListener('click', function(e){
