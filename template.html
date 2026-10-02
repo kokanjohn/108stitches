@@ -2346,7 +2346,7 @@ setView(prefs.view==='master'?'master':'team');
 
       // entry fee cell
       const efMark = unlocked
-        ? `<span class="pay-check editable" data-type="ef" data-id="${esc(id)}" data-paid="${efPaid}">${efPaid?'✅':'⬜'}</span>`
+        ? `<span class="pay-check editable" data-action='toggle' data-type="ef" data-id="${esc(id)}" data-paid="${efPaid}">${efPaid?'✅':'⬜'}</span>`
         : `<span class="pay-check">${efPaid?'✅':'⬜'}</span>`;
 
       // end of season cell
@@ -2356,7 +2356,7 @@ setView(prefs.view==='master'?'master':'team');
       else{
         const amt = `<span class="pay-amt">owes $${money(-net)}</span>`;
         eosCel = unlocked
-          ? `<span class="pay-check editable" data-type="eos" data-id="${esc(id)}" data-paid="${eosPaid}">${eosPaid?'✅':'⬜'}</span>${amt}`
+          ? `<span class="pay-check editable" data-action='toggle' data-type="eos" data-id="${esc(id)}" data-paid="${eosPaid}">${eosPaid?'✅':'⬜'}</span>${amt}`
           : `<span class="pay-check">${eosPaid?'✅':'⬜'}</span>${amt}`;
       }
 
@@ -2367,7 +2367,7 @@ setView(prefs.view==='master'?'master':'team');
       </tr>`;
     });
 
-    const editBtn = `<button class="pay-edit-btn${unlocked?' unlocked':''}" id="payEditBtn">${unlocked?'🔓 Editing':'🔒 Edit mode'}</button>`;
+    const editBtn = "<button class='pay-edit-btn"+(unlocked?' unlocked':'')+"' data-action='edit'>"+(unlocked?'[Editing]':'[Edit mode]')+"</button>";
     const summary = `<div class="pay-summary">Entry fees: ${efTotal-efOut}/${efTotal} paid &nbsp;·&nbsp; End of season: ${eosTotal-eosOut}/${eosTotal} settled</div>`;
 
     content.innerHTML = `
@@ -2385,21 +2385,22 @@ setView(prefs.view==='master'?'master':'team');
       </table>
       ${summary}`;
 
-    document.getElementById('payEditBtn').addEventListener('click', function(){
-      if(unlocked){ unlocked=false; render(); return; }
-      promptPin();
-    });
-
-    content.querySelectorAll('.pay-check.editable').forEach(function(el){
-      el.addEventListener('click', async function(){
-        const type = el.dataset.type, id = el.dataset.id;
-        const was = el.dataset.paid === 'true';
-        const key = type === 'ef' ? 'entry_fee' : 'end_of_season';
-        await dbSet(`${key}/${id}`, !was);
-        render();
-      });
-    });
   }
+
+  // single delegated handler on content — survives content.innerHTML re-renders
+  content.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    if(btn.dataset.action === 'edit'){
+      if(unlocked){ unlocked=false; render(); } else promptPin();
+      return;
+    }
+    if(btn.dataset.action === 'toggle' && unlocked){
+      var was = btn.dataset.paid === 'true';
+      var key = (btn.dataset.type==='ef'?'entry_fee':'end_of_season') + '/' + btn.dataset.id;
+      dbSet(key, !was).then(function(){ render(); });
+    }
+  });
 
   function promptPin(){
     const wrap = document.createElement('div');
