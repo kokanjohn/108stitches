@@ -948,12 +948,12 @@ const positions=[...new Set(DATA.records.flatMap(posOf))]
 positions.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;posSel.appendChild(o);});
 
 // salary bars
-const maxSal=Math.max(...DATA.teams.map(t=>t.total2026));
+const maxSal=Math.max(...DATA.teams.map(t=>t.totalSalary));
 $('#bars').innerHTML = DATA.teams.map(t=>`
   <div class="bar" data-team="${esc(t.team)}" role="button" tabindex="0" title="Jump to ${esc(t.team)}">
     <div class="bn">${esc(t.team)}</div>
-    <div class="track"><div class="fill" style="width:${(t.total2026/maxSal*100).toFixed(1)}%"></div></div>
-    <div class="amt">${t.total2026}</div>
+    <div class="track"><div class="fill" style="width:${(t.totalSalary/maxSal*100).toFixed(1)}%"></div></div>
+    <div class="amt">${t.totalSalary}</div>
   </div>`).join('');
 
 // group records by team (in salary order)
@@ -1042,7 +1042,7 @@ function renderTeams(recs,q){
         <span><span class="tname">${esc(team)}</span></span>
         <span class="meta">
           <span><span class="lbl">Roster</span><b>${rows.length}</b></span>
-          <span><span class="lbl">Salary</span><b>${meta.total2026}</b></span>
+          <span><span class="lbl">Salary</span><b>${meta.totalSalary}</b></span>
           <svg class="tchev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
         </span>
       </button>
@@ -1256,7 +1256,7 @@ $('#bars').addEventListener('keydown',e=>{
   const RELAY="https://espn-relay.baseball-gm.workers.dev";  // Cloudflare Worker (ESPN relay + card search)
   const BUDGET=290, ROSTER=26;
   const cardCache={};                   // in-memory cache for this session (by id or write-in name)
-  const KEEPERS_READY=!!(DATA.keepers_ready);  // set live from ESPN keeperDeadlineFutureDate            // 2027 keepers aren't declared/readable yet — treat as pending
+  const KEEPERS_READY=false;            // 2027 keepers aren't declared/readable yet — treat as pending
   const view=document.getElementById('auctionView');
   let players=[], teams=null, selected=null, picksNow={}, dragKey=null;
   let ROSTERED_IDS=new Set();
