@@ -531,7 +531,7 @@
 <div class="wrap">
   <details class="panel" id="salary">
     <summary>
-      <h2>${DATA.season} roster salary</h2>
+      <h2 id="salHeading"><!-- set by JS --></h2>
       <span class="hint">Total spent per team on the current roster</span>
       <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
     </summary>
@@ -663,7 +663,7 @@
 </div>
 
 <footer><div class="wrap">
-  The <b>${DATA.season}</b> column is this year's roster cost; <b>${DATA.season+1}</b> is what each player would cost to keep next year. Rosters reflect who's on each team right now.
+  <span id="footerLegend"><!-- set by JS --></span>
   <span id="livelegend"></span>
 </div></footer>
 
@@ -671,7 +671,7 @@
 <div id="auctionView" hidden>
   <div class="auc-shell">
     <div class="auc-top">
-      <h2>Live Auction<span class="auc-sub">${DATA.season+1} · live rosters &amp; budget</span></h2>
+      <h2>Live Auction<span class="auc-sub" id="aucSubHead"><!-- set by JS --></span></h2>
       <div class="auc-actions">
         <button class="btn" id="aucUndo">Undo</button>
         <button class="btn" id="aucReset">Reset</button>
@@ -948,6 +948,11 @@ const positions=[...new Set(DATA.records.flatMap(posOf))]
 positions.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;posSel.appendChild(o);});
 
 // salary bars
+(function(){
+  var sh=document.getElementById("salHeading"); if(sh) sh.textContent=DATA.season+" roster salary";
+  var fl=document.getElementById("footerLegend"); if(fl) fl.innerHTML="The <b>"+DATA.season+"</b> column is this year's roster cost; <b>"+(DATA.season+1)+"</b> is what each player would cost to keep next year. Rosters reflect who's on each team right now.";
+  var ah=document.getElementById("aucSubHead"); if(ah) ah.textContent=(DATA.season+1)+"· live rosters & budget";
+})();
 const maxSal=Math.max(...DATA.teams.map(t=>t.totalSalary));
 $('#bars').innerHTML = DATA.teams.map(t=>`
   <div class="bar" data-team="${esc(t.team)}" role="button" tabindex="0" title="Jump to ${esc(t.team)}">
