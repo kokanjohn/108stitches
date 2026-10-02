@@ -741,8 +741,7 @@ def build():
 
     # load keeper snapshot index (primary price source — id-keyed, rename-proof)
     snap_by_id, snap_by_name, _snap = load_keeper_snapshot_index()
-    # load auction picks for this season — provides p[SEASON+1] for auctioned players
-    auction_picks = load_auction_picks(SEASON) if live else {}
+    # auction picks loaded after live ESPN succeeds (see below)
     if _snap:
         print(f"  keeper snapshot: loaded {_snap.get('count','?')} players "
               f"(season_from={_snap.get('season_from')}) — "
@@ -760,6 +759,7 @@ def build():
     stale = False; snapshot_at = ""; standings = None
     live_error = live_hint = target = ""
     keepers_ready = False
+    auction_picks = {}
     keeper_diag = None
     rosters = None
     reg_over = None; reg_diag = None
@@ -778,6 +778,7 @@ def build():
             standings = compute_standings(league)
             reg_over, reg_diag = regular_season_over(league)
             live = True
+            auction_picks = load_auction_picks(SEASON)
             if KEEPER_DIAG:
                 try: keeper_diag = keeper_diagnostic(league)
                 except Exception as e: keeper_diag = {"note": f"{type(e).__name__}: {e}"}
