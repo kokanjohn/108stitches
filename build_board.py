@@ -44,6 +44,7 @@ NAME_DIAG         = True    # print a Draft<->Keeper-Prices name-mismatch report
 # same trigger as the standings lock. Season-keyed file is committed to the repo by build.yml and
 # read back locally on every subsequent build — immune to network issues. See ROLLOVER-PLAN.
 PAGES_URL      = "https://kokanjohn.github.io/108stitches/"   # used to reuse the last live snapshot if ESPN is down
+FIREBASE_URL   = "https://stitches-fd635-default-rtdb.firebaseio.com"  # public Realtime Database — read-only for build
 STANDINGS_LOCK_AT = ""   # Optional manual backstop (ET "YYYY-MM-DD HH:MM"). Leave "" to auto-detect the
                          # regular-season end from ESPN. Season-keyed lock file; committed by build.yml.
 OWNER_ALIAS    = {}              # {"ESPN Name": "Sheet Owner Name"} if a person's name differs
@@ -175,7 +176,7 @@ def roster_rank(e, idx):
         return ((3 if e.get("is_pitcher") else 1), sub, idx)
     return (0, BAT.get(s, 9), idx)          # active batter
 
-def build_from_espn(rosters, index, OWNER_TEAM, snap_by_id=None, snap_by_name=None):
+def build_from_espn(rosters, index, OWNER_TEAM, snap_by_id=None, snap_by_name=None, auction_picks=None):
     from espn_live import key as ekey, fuzzy
     snap_by_id = snap_by_id or {}; snap_by_name = snap_by_name or {}
     keys = list(index.keys())
@@ -210,6 +211,12 @@ def build_from_espn(rosters, index, OWNER_TEAM, snap_by_id=None, snap_by_name=No
         else:
             p = {**{y: (sp["p"][y] if sp else None) for y in tuple(range(SEASON-4, SEASON))},
                  SEASON: (sp["p"][SEASON] if sp else None)}
+        # auction pick: if this player was won at auction this season, record their bid as p[SEASON+1]
+        # (overrides any snapshot cost_next — the actual bid is ground truth)
+        if auction_picks:
+            ap = auction_picks.get(str(e.get("player_id") or ""))
+            if ap and ap.get("bid"):
+                p[SEASON + 1] = int(ap["bid"])
         rec = {"team": team, "owner": owner,
                "player": (sp["player"] if sp else name),
                "mlb": (sp["mlb"] if sp else (e["mlb"] or "FA")),
@@ -635,6 +642,29 @@ def load_keeper_snapshot_index():
             by_name[keyof(e["name"])] = e
     return by_id, by_name, snap
 
+def load_auction_picks(season):
+    """Fetch the auction picks ledger from Firebase for the given season.
+    Returns {str(playerId): pick_entry} keyed by ESPN player id, or {} if unavailable.
+    Path mirrors the template: auction{season+1}."""
+    import urllib.request as _ur
+    path = f"auction{season + 1}"
+    url  = f"{FIREBASE_URL}/{path}.json"
+    try:
+        with _ur.urlopen(url, timeout=15) as r:
+            raw = json.loads(r.read().decode("utf-8"))
+        if not raw or not isinstance(raw, dict):
+            return {}
+        by_id = {}
+        for entry in raw.values():
+            pid = entry.get("playerId")
+            if pid is not None:
+                by_id[str(pid)] = entry
+        print(f"  auction picks: loaded {len(by_id)} picks from Firebase ({path})")
+        return by_id
+    except Exception as e:
+        print(f"  auction picks: could not load from Firebase ({type(e).__name__}: {e})")
+        return {}
+
 def snap_prices(entry, season):
     """Convert a snapshot entry into the p-dict format used by build_from_espn.
     cost_next  -> p[season+1]  (next-year keeper cost)
@@ -711,6 +741,8 @@ def build():
 
     # load keeper snapshot index (primary price source — id-keyed, rename-proof)
     snap_by_id, snap_by_name, _snap = load_keeper_snapshot_index()
+    # load auction picks for this season — provides p[SEASON+1] for auctioned players
+    auction_picks = load_auction_picks(SEASON) if live else {}
     if _snap:
         print(f"  keeper snapshot: loaded {_snap.get('count','?')} players "
               f"(season_from={_snap.get('season_from')}) — "
@@ -742,7 +774,7 @@ def build():
             league = fetch_league(ESPN_LEAGUE_ID, ESPN_SEASON, ESPN_S2, ESPN_SWID,
                                   local_json=raw, url=(ESPN_URL_OVERRIDE or None))
             rosters = current_rosters(league, OWNER_ALIAS)
-            records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM, snap_by_id, snap_by_name)
+            records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM, snap_by_id, snap_by_name, auction_picks)
             standings = compute_standings(league)
             reg_over, reg_diag = regular_season_over(league)
             live = True
