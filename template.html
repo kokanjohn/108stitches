@@ -134,6 +134,26 @@
     background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch}
   .junkview[hidden]{display:none}
   /* season payouts — shares .modal/.modal-sheet/.modal-body */
+  /* payments screen */
+  .pay-screen .pay-hdr{display:flex;justify-content:space-between;align-items:center;margin:0 0 16px;flex-wrap:wrap;gap:10px}
+  .pay-screen .pay-hdr-title{font:700 15px/1 "Oswald",sans-serif;text-transform:uppercase;letter-spacing:.04em;color:var(--ink)}
+  .pay-screen .pay-edit-btn{font:600 12px/1 "Oswald",sans-serif;letter-spacing:.04em;padding:7px 14px;border-radius:7px;border:1px solid var(--line);background:var(--field);color:var(--mute);cursor:pointer;text-transform:uppercase}
+  .pay-screen .pay-edit-btn.unlocked{border-color:var(--warn);color:var(--warn)}
+  .pay-screen table{width:100%;border-collapse:collapse;font-size:13.5px}
+  .pay-screen th{font:700 11px/1 "Oswald",sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);padding:0 8px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .pay-screen th.ctr,.pay-screen td.ctr{text-align:center}
+  .pay-screen td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .pay-screen tr:last-child td{border-bottom:none}
+  .pay-screen .pay-tn{font:600 13.5px/1.2 "Oswald",sans-serif}
+  .pay-screen .pay-check{font-size:18px;cursor:default;user-select:none}
+  .pay-screen .pay-check.editable{cursor:pointer}
+  .pay-screen .pay-check.editable:hover{opacity:.7}
+  .pay-screen .pay-na{color:var(--mute);font-size:12px}
+  .pay-screen .pay-amt{font-family:"Roboto Mono",monospace;font-size:12px;color:#e05c5c;display:block}
+  .pay-screen .pay-summary{margin-top:14px;font-size:12.5px;color:var(--mute);text-align:right;line-height:1.6}
+  .pay-screen .pay-pin-wrap{margin-bottom:16px;display:flex;gap:8px;align-items:center}
+  .pay-screen .pay-pin-wrap input{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink);font-size:14px}
+  .pay-screen .pay-pin-err{color:#e05c5c;font-size:12px;margin-left:4px}
   .sp-inprog{padding:18px;border-radius:10px;background:var(--field);border:1px solid var(--line);color:var(--mute);font-size:14px;line-height:1.5;text-align:center}
   .sp-table{width:100%;border-collapse:collapse;margin-bottom:24px}
   .sp-table th{font:700 11px/1 "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);padding:0 8px 8px;text-align:left;border-bottom:1px solid var(--line)}
@@ -2111,6 +2131,17 @@ setView(prefs.view==='master'?'master':'team');
     </div>
   </div>
 </div>
+<div class="modal" id="paymentsModal" role="dialog" aria-modal="true" aria-label="Payments" hidden>
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <h2>Payments</h2>
+      <button class="modal-x" id="paymentsClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body pay-screen">
+      <div id="paymentsContent"></div>
+    </div>
+  </div>
+</div>
 <nav class="snav" role="navigation" aria-label="Main">
   <button id="navHome" type="button" aria-label="Team Salaries">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18"/><path d="M6 21V9l6-5 6 5v12"/><path d="M10 21v-6h4v6"/></svg>
@@ -2148,6 +2179,11 @@ setView(prefs.view==='master'?'master':'team');
       <button class="jd-item" id="jrSeasonPay" type="button">
         <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M9 3.5C10 3.2 11 3 12 3"/></svg>
         <span class="jd-txt"><span class="jd-t">Season Payouts</span><span class="jd-d">What each team earns or owes</span></span>
+        <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="jd-item" id="jrPayments" type="button">
+        <svg class="jd-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+        <span class="jd-txt"><span class="jd-t">Payments</span><span class="jd-d">Entry fees &amp; end-of-season payouts</span></span>
         <svg class="jd-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
       <button class="jd-item" id="jrSettings" type="button">
@@ -2256,6 +2292,143 @@ setView(prefs.view==='master'?'master':'team');
 })();
 </script>
 <script>
+/* ---- payments screen ---- */
+(function(){
+  const PAYMENTS_PIN = "eanes";
+  const DB = "https://stitches-fd635-default-rtdb.firebaseio.com";
+  const modal = document.getElementById('paymentsModal');
+  const content = document.getElementById('paymentsContent');
+  const ENTRY_FEE = 135;
+  let unlocked = false;
+
+  function esc(t){ var d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+  function money(v){ return Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+
+  function path(key){ return `${DB}/payments/${DATA.season}/${key}.json`; }
+
+  async function dbGet(key){
+    try{ const r=await fetch(path(key)); return r.ok ? await r.json() : null; }
+    catch(e){ return null; }
+  }
+  async function dbSet(key, val){
+    try{ await fetch(path(key),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(val)}); }
+    catch(e){ console.error('payments write failed',e); }
+  }
+
+  // net owed per team from standings payout (negative = owes, positive = receiving)
+  function netByTeam(){
+    const m = {};
+    const st = DATA.standings;
+    if(!st || !st.payout) return m;
+    (st.payout||[]).forEach(function(p){ m[p.team] = p.earned; });
+    return m;
+  }
+
+  async function render(){
+    const [efData, eosData] = await Promise.all([dbGet('entry_fee'), dbGet('end_of_season')]);
+    const ef = efData || {}, eos = eosData || {};
+    const nets = netByTeam();
+    const locked = !(DATA.standings && DATA.standings.locked);
+    const teams = (DATA.teams||[]).slice().sort(function(a,b){ return a.team.localeCompare(b.team); });
+
+    let efOut=0, efTotal=0, eosOut=0, eosTotal=0;
+
+    let rows = '';
+    teams.forEach(function(t){
+      const id = String(t.espnId||t.team);
+      const efPaid = !!(ef[id]);
+      const net = nets[t.team];
+      const owes = (net != null && net < 0);
+      const eosPaid = owes ? !!(eos[id]) : null;
+
+      efTotal++; if(!efPaid) efOut++;
+      if(owes){ eosTotal++; if(!eosPaid) eosOut++; }
+
+      // entry fee cell
+      const efMark = unlocked
+        ? `<span class="pay-check editable" data-type="ef" data-id="${esc(id)}" data-paid="${efPaid}">${efPaid?'✅':'⬜'}</span>`
+        : `<span class="pay-check">${efPaid?'✅':'⬜'}</span>`;
+
+      // end of season cell
+      let eosCel = '';
+      if(locked){ eosCel = '<span class="pay-na">Season in progress</span>'; }
+      else if(!owes){ eosCel = '<span class="pay-na">N/A</span>'; }
+      else{
+        const amt = `<span class="pay-amt">owes $${money(-net)}</span>`;
+        eosCel = unlocked
+          ? `<span class="pay-check editable" data-type="eos" data-id="${esc(id)}" data-paid="${eosPaid}">${eosPaid?'✅':'⬜'}</span>${amt}`
+          : `<span class="pay-check">${eosPaid?'✅':'⬜'}</span>${amt}`;
+      }
+
+      rows += `<tr>
+        <td class="pay-tn">${esc(t.team)}</td>
+        <td class="ctr">${efMark}</td>
+        <td class="ctr">${eosCel}</td>
+      </tr>`;
+    });
+
+    const editBtn = `<button class="pay-edit-btn${unlocked?' unlocked':''}" id="payEditBtn">${unlocked?'🔓 Editing':'🔒 Edit mode'}</button>`;
+    const summary = `<div class="pay-summary">Entry fees: ${efTotal-efOut}/${efTotal} paid &nbsp;·&nbsp; End of season: ${eosTotal-eosOut}/${eosTotal} settled</div>`;
+
+    content.innerHTML = `
+      <div class="pay-hdr">
+        <span class="pay-hdr-title">Season ${DATA.season} payments</span>
+        ${editBtn}
+      </div>
+      <table>
+        <thead><tr>
+          <th>Team</th>
+          <th class="ctr">Entry fee ($${ENTRY_FEE})</th>
+          <th class="ctr">End of season</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${summary}`;
+
+    document.getElementById('payEditBtn').addEventListener('click', function(){
+      if(unlocked){ unlocked=false; render(); return; }
+      promptPin();
+    });
+
+    content.querySelectorAll('.pay-check.editable').forEach(function(el){
+      el.addEventListener('click', async function(){
+        const type = el.dataset.type, id = el.dataset.id;
+        const was = el.dataset.paid === 'true';
+        const key = type === 'ef' ? 'entry_fee' : 'end_of_season';
+        await dbSet(`${key}/${id}`, !was);
+        render();
+      });
+    });
+  }
+
+  function promptPin(){
+    const wrap = document.createElement('div');
+    wrap.className = 'pay-pin-wrap';
+    wrap.innerHTML = `<input type="password" id="payPinInput" placeholder="Enter PIN" autocomplete="off">
+      <button class="pay-edit-btn" id="payPinOk">Unlock</button>
+      <span class="pay-pin-err" id="payPinErr"></span>`;
+    content.insertBefore(wrap, content.firstChild);
+    const inp = document.getElementById('payPinInput');
+    inp.focus();
+    function tryPin(){
+      if(inp.value === PAYMENTS_PIN){ unlocked=true; render(); }
+      else{ document.getElementById('payPinErr').textContent='Incorrect PIN'; inp.value=''; inp.focus(); }
+    }
+    document.getElementById('payPinOk').addEventListener('click', tryPin);
+    inp.addEventListener('keydown', function(e){ if(e.key==='Enter') tryPin(); });
+  }
+
+  function openM(){ modal.hidden=false; document.body.style.overflow='hidden'; render(); }
+  function closeM(){ modal.hidden=true; document.body.style.overflow=''; unlocked=false; }
+  window.SCREENS = window.SCREENS||{};
+  window.SCREENS.openPayments = openM;
+  window.SCREENS.closePayments = closeM;
+  document.getElementById('paymentsClose').addEventListener('click', closeM);
+  modal.addEventListener('click', function(e){ if(e.target===modal) closeM(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'&&!modal.hidden) closeM(); });
+})();
+</script>
+<script>
 /* ---- bottom-nav controller ---- */
 (function(){
   var S = window.SCREENS || (window.SCREENS = {});
@@ -2268,7 +2441,7 @@ setView(prefs.view==='master'?'master':'team');
     tabStd.classList.toggle('active',  name==='standings');
     tabJunk.classList.toggle('active', name==='junk');
   }
-  function closeSubs(){ if(S.closeWM)S.closeWM(); if(S.closeRules)S.closeRules(); if(S.closeSettings)S.closeSettings(); if(S.closeAuction)S.closeAuction(); if(S.closeSeasonPay)S.closeSeasonPay(); }
+  function closeSubs(){ if(S.closeWM)S.closeWM(); if(S.closeRules)S.closeRules(); if(S.closeSettings)S.closeSettings(); if(S.closeAuction)S.closeAuction(); if(S.closeSeasonPay)S.closeSeasonPay(); if(S.closePayments)S.closePayments(); }
   function showJunk(){ junk.hidden=false; document.body.style.overflow='hidden'; }
   function hideJunk(){ junk.hidden=true; }
   function goHome(){ if(S.closeStandings)S.closeStandings(); closeSubs(); hideJunk(); document.body.style.overflow=''; setActive('home'); }
@@ -2278,7 +2451,7 @@ setView(prefs.view==='master'?'master':'team');
   tabHome.addEventListener('click', goHome);
   tabStd.addEventListener('click', goStandings);
   tabJunk.addEventListener('click', goJunk);
-  var rowMap = { jrWM:'openWM', jrAuction:'openAuction', jrSeasonPay:'openSeasonPay', jrRules:'openRules', jrSettings:'openSettings' };
+  var rowMap = { jrWM:'openWM', jrAuction:'openAuction', jrSeasonPay:'openSeasonPay', jrPayments:'openPayments', jrRules:'openRules', jrSettings:'openSettings' };
   Object.keys(rowMap).forEach(function(id){
     var b = document.getElementById(id);
     if(b) b.addEventListener('click', function(){ var fn = window.SCREENS[rowMap[id]]; if(fn) fn(); });
