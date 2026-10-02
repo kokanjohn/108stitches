@@ -175,27 +175,41 @@ def roster_rank(e, idx):
         return ((3 if e.get("is_pitcher") else 1), sub, idx)
     return (0, BAT.get(s, 9), idx)          # active batter
 
-def build_from_espn(rosters, index, OWNER_TEAM):
+def build_from_espn(rosters, index, OWNER_TEAM, snap_by_id=None, snap_by_name=None):
     from espn_live import key as ekey, fuzzy
+    snap_by_id = snap_by_id or {}; snap_by_name = snap_by_name or {}
     keys = list(index.keys())
-    # order every roster spot the way ESPN displays it, within each team
     ordered = sorted(enumerate(rosters),
                      key=lambda t: ((t[1]["team"] or t[1]["owner"] or ""), roster_rank(t[1], t[0])))
     records, teams, matched = [], {}, 0
+    snap_hits_id = snap_hits_name = sheet_only = 0
     for _, e in ordered:
         owner, name, acq = e["owner"], e["player"], e["acq"]
+        pid = str(e.get("player_id") or "")
+        # snapshot lookup: id first (rename-proof), name fallback
+        snap_e = snap_by_id.get(pid) if pid else None
+        if snap_e: snap_hits_id += 1
+        if snap_e is None:
+            snap_e = snap_by_name.get(ekey(name))
+            if snap_e: snap_hits_name += 1
+        # worksheet lookup (fallback for players not in snapshot)
         k = ekey(name); sp = index.get(k)
         if sp is None:
             nk = fuzzy(k, keys)
             if nk: sp = index.get(nk)
-        if sp: matched += 1
+        if sp and not snap_e: sheet_only += 1
+        if sp or snap_e: matched += 1
         tag = classify(acq, sp, owner)
-        team = e["team"] or OWNER_TEAM.get(owner, owner)     # ESPN's current team name wins
+        team = e["team"] or OWNER_TEAM.get(owner, owner)
         team_id = e.get("team_id")
         s = e.get("slot_id"); is_pit = e.get("is_pitcher")
         grp = "pit" if (s in (13,14,15) or (s in (16,17) and is_pit)) else "bat"
-        p = {**{y: (sp["p"][y] if sp else None) for y in tuple(range(SEASON-4, SEASON))},
-             SEASON: (sp["p"][SEASON] if sp else None)}
+        # price: snapshot wins; worksheet fills gaps; None if neither has it
+        if snap_e:
+            p = snap_prices(snap_e, SEASON)
+        else:
+            p = {**{y: (sp["p"][y] if sp else None) for y in tuple(range(SEASON-4, SEASON))},
+                 SEASON: (sp["p"][SEASON] if sp else None)}
         rec = {"team": team, "owner": owner,
                "player": (sp["player"] if sp else name),
                "mlb": (sp["mlb"] if sp else (e["mlb"] or "FA")),
@@ -207,6 +221,10 @@ def build_from_espn(rosters, index, OWNER_TEAM):
         t = teams.setdefault(team, {"team": team, "owner": owner, "espnId": team_id, "count": 0, "kept": 0, "totalSalary": 0})
         t["count"] += 1; t["kept"] += 1 if tag == "kept" else 0
         if p[SEASON]: t["totalSalary"] += p[SEASON]
+    if snap_by_id or snap_by_name:
+        print(f"  snapshot coverage: {snap_hits_id} by id, {snap_hits_name} by name, "
+              f"{sheet_only} worksheet-only, "
+              f"{len(records)-matched} unmatched")
     return records, teams, matched
 
 def team_meta(records):
@@ -601,6 +619,36 @@ def read_keeper_snapshot():
         pass
     return None
 
+def load_keeper_snapshot_index():
+    """Build two lookups from the committed keeper snapshot:
+       - by_id:   {str(player_id): entry}  (primary — rename-proof)
+       - by_name: {normalized_name: entry}  (fallback)
+    Returns (by_id, by_name, snap) or ({}, {}, None) if no snapshot file yet."""
+    snap = read_keeper_snapshot()
+    if not snap:
+        return {}, {}, None
+    by_id, by_name = {}, {}
+    for e in snap.get("players") or []:
+        if e.get("id") is not None:
+            by_id[str(e["id"])] = e
+        if e.get("name"):
+            by_name[keyof(e["name"])] = e
+    return by_id, by_name, snap
+
+def snap_prices(entry, season):
+    """Convert a snapshot entry into the p-dict format used by build_from_espn.
+    cost_next  -> p[season+1]  (next-year keeper cost)
+    history    -> p[season], p[season-1], p[season-2]  (string keys in snapshot)
+    Older history years (beyond last 3) are None."""
+    p = {y: None for y in tuple(range(season-4, season+2))}
+    hist = entry.get("history") or {}
+    for yr_str, val in hist.items():
+        try: p[int(yr_str)] = val
+        except (ValueError, KeyError): pass
+    if entry.get("cost_next") is not None:
+        p[season+1] = entry["cost_next"]
+    return p
+
 def make_standings_lock(standings, locked_at):
     """Freeze the ALLOCATION only: who won each category, each team's cat-fraction + record-fraction,
     and the stat cards. Dollars are re-derived live each build from the current pool."""
@@ -638,12 +686,13 @@ def apply_standings_lock(standings, lock):
     return out
 
 def build():
-    if not WORKSHEET.exists(): sys.exit(f"Can't find the worksheet: {WORKSHEET}")
     if not TEMPLATE.exists():  sys.exit("Can't find template.html next to this script.")
-    wb = load_workbook(WORKSHEET, read_only=True, data_only=True)
-    draft_records, index, OWNER_TEAM = parse_worksheet(wb)
+    # worksheet is optional — snapshot is the primary price source.
+    # If the worksheet exists it fills gaps the snapshot doesn't cover (e.g. brand-new season).
+    wb = load_workbook(WORKSHEET, read_only=True, data_only=True) if WORKSHEET.exists() else None
+    draft_records, index, OWNER_TEAM = parse_worksheet(wb) if wb else ([], {}, {})
 
-    if NAME_DIAG:
+    if NAME_DIAG and wb:
         rep = name_mismatch_report(wb)
         flagged = rep["flagged"]
         silent = [f for f in flagged if f["silent"]]
@@ -659,6 +708,15 @@ def build():
         if verify:
             print(f"  names: +{len(verify)} near-match(es) the live fuzzy auto-links (likely fine); "
                   f"{rep['orphans']} unmatched look like new/FA players (expected).")
+
+    # load keeper snapshot index (primary price source — id-keyed, rename-proof)
+    snap_by_id, snap_by_name, _snap = load_keeper_snapshot_index()
+    if _snap:
+        print(f"  keeper snapshot: loaded {_snap.get('count','?')} players "
+              f"(season_from={_snap.get('season_from')}) — "
+              f"{len(snap_by_id)} by id, {len(snap_by_name)} by name")
+    else:
+        print("  keeper snapshot: not found — using worksheet only")
 
     from datetime import datetime, timezone
     try:
@@ -684,7 +742,7 @@ def build():
             league = fetch_league(ESPN_LEAGUE_ID, ESPN_SEASON, ESPN_S2, ESPN_SWID,
                                   local_json=raw, url=(ESPN_URL_OVERRIDE or None))
             rosters = current_rosters(league, OWNER_ALIAS)
-            records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM)
+            records, teams, matched = build_from_espn(rosters, index, OWNER_TEAM, snap_by_id, snap_by_name)
             standings = compute_standings(league)
             reg_over, reg_diag = regular_season_over(league)
             live = True
