@@ -2317,10 +2317,16 @@ setView(prefs.view==='master'?'master':'team');
 
   // net owed per team from standings payout (negative = owes, positive = receiving)
   function netByTeam(){
-    const m = {};
-    const st = DATA.standings;
-    if(!st || !st.payout) return m;
-    (st.payout||[]).forEach(function(p){ m[p.team] = p.earned; });
+    var m={}, st=DATA.standings;
+    if(!st) return m;
+    var mvIdx={}, payIdx={}, ts={};
+    (st.moves||[]).forEach(function(mv){ mvIdx[mv.team]=mv.moves||0; ts[mv.team]=1; });
+    (st.payout||[]).forEach(function(p){ payIdx[p.team]=p; ts[p.team]=1; });
+    Object.keys(ts).forEach(function(nm){
+      var p=payIdx[nm]||{};
+      var moves=mvIdx[nm]!=null?mvIdx[nm]:(p.moves!=null?p.moves:0);
+      m[nm]=(p.gross!=null?p.gross:0)-moves;
+    });
     return m;
   }
 
@@ -2389,7 +2395,6 @@ setView(prefs.view==='master'?'master':'team');
 
   // single delegated handler on content — survives content.innerHTML re-renders
   content.addEventListener('click', function(e){
-    console.log('payments click:', e.target, e.target.closest('[data-action]'));
     var btn = e.target.closest('[data-action]');
     if(!btn) return;
     if(btn.dataset.action === 'edit'){
@@ -2404,6 +2409,7 @@ setView(prefs.view==='master'?'master':'team');
   });
 
   function promptPin(){
+    if(document.getElementById('payPinInput')) return;
     const wrap = document.createElement('div');
     wrap.className = 'pay-pin-wrap';
     wrap.innerHTML = `<input type="password" id="payPinInput" placeholder="Enter PIN" autocomplete="off">
