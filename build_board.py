@@ -21,21 +21,21 @@ from openpyxl import load_workbook
 
 # ---- CONFIG -----------------------------------------------------------------
 HERE      = Path(__file__).parent
-WORKSHEET = HERE / "2026_Pre-Draft_Worksheet.xlsx"
+LEAGUE, SEASON, BUYIN = "108 Stitches", 2026, 290
+WORKSHEET = HERE / f"{SEASON}_Pre-Draft_Worksheet.xlsx"
 TEMPLATE  = HERE / "template.html"
 OUTPUT    = HERE / "108-stitches-keeper-board.html"
-LEAGUE, SEASON, BUYIN = "108 Stitches", 2026, 290
 
 USE_ESPN       = True
 ESPN_LEAGUE_ID = 35759
-ESPN_SEASON    = 2026
+ESPN_SEASON    = SEASON
 ESPN_S2        = None            # public league -> None
 ESPN_SWID      = None            # public league -> None
 ESPN_JSON_FILE = None            # optional: path to saved league JSON (offline/testing)
 ESPN_URL_OVERRIDE = "https://espn-relay.baseball-gm.workers.dev/"   # your Cloudflare relay
 
 # --- Live Auction data layer ---
-PROJECTION_SEASON = 2026   # projections to show in the auction; flip to 2027 before the March 2027 auction
+PROJECTION_SEASON = SEASON  # auto-flips to SEASON+1 after keeper deadline (see keepers_ready in build())
 AUCTION_DIAG      = False   # raw player-sample dump (Phase 1 verify) — done
 AUCTION_BAKE      = True    # build auction-players.json + a small on-page verification summary
 KEEPER_DIAG       = False   # keeper source resolved (rosters at season roll) — off
@@ -115,7 +115,7 @@ def parse_worksheet(wb):
         player = norm(r[2]) if len(r) > 2 else ""
         if not player: continue
         k = keyof(player)
-        HIST[k] = {y: toint(r[idx]) for y, idx in zip((2022,2023,2024,2025), (5,6,7,8))}
+        HIST[k] = {y: toint(r[idx]) for y, idx in zip(tuple(range(SEASON-4, SEASON)), (5,6,7,8))}
         META[k] = {"name": NAME_FIX.get(player, player), "mlb": norm(r[3]) or "FA", "pos": norm(r[4])}
         owner, team = norm(r[1]), norm(r[0])
         if owner and owner not in OWNER_TEAM: OWNER_TEAM[owner] = team
@@ -147,7 +147,7 @@ def parse_worksheet(wb):
             rec = {"team": OWNER_TEAM.get(owner, owner), "owner": owner, "player": disp,
                    "mlb": (m["mlb"] if m else "FA"), "pos": slot, "kept": kept,
                    "tag": "kept" if kept else "auction",
-                   "p": {**{y: (hist.get(y) if kept else None) for y in (2022,2023,2024,2025)}, 2026: cur}}
+                   "p": {**{y: (hist.get(y) if kept else None) for y in tuple(range(SEASON-4, SEASON))}, SEASON: cur}}
             records.append(rec)
             index[k] = rec
     return records, index, OWNER_TEAM
@@ -195,8 +195,8 @@ def build_from_espn(rosters, index, OWNER_TEAM):
         team_id = e.get("team_id")
         s = e.get("slot_id"); is_pit = e.get("is_pitcher")
         grp = "pit" if (s in (13,14,15) or (s in (16,17) and is_pit)) else "bat"
-        p = {**{y: (sp["p"][y] if sp else None) for y in (2022,2023,2024,2025)},
-             2026: (sp["p"][2026] if sp else None)}
+        p = {**{y: (sp["p"][y] if sp else None) for y in tuple(range(SEASON-4, SEASON))},
+             SEASON: (sp["p"][SEASON] if sp else None)}
         rec = {"team": team, "owner": owner,
                "player": (sp["player"] if sp else name),
                "mlb": (sp["mlb"] if sp else (e["mlb"] or "FA")),
@@ -205,17 +205,17 @@ def build_from_espn(rosters, index, OWNER_TEAM):
                "kept": tag == "kept", "tag": tag, "p": p}
         if EMIT_KEEPER_SNAPSHOT: rec["id"] = e.get("player_id")
         records.append(rec)
-        t = teams.setdefault(team, {"team": team, "owner": owner, "espnId": team_id, "count": 0, "kept": 0, "total2026": 0})
+        t = teams.setdefault(team, {"team": team, "owner": owner, "espnId": team_id, "count": 0, "kept": 0, "totalSalary": 0})
         t["count"] += 1; t["kept"] += 1 if tag == "kept" else 0
-        if p[2026]: t["total2026"] += p[2026]
+        if p[2026]: t["totalSalary"] += p[2026]
     return records, teams, matched
 
 def team_meta(records):
     teams = {}
     for r in records:
-        t = teams.setdefault(r["team"], {"team": r["team"], "owner": r["owner"], "count": 0, "kept": 0, "total2026": 0})
+        t = teams.setdefault(r["team"], {"team": r["team"], "owner": r["owner"], "count": 0, "kept": 0, "totalSalary": 0})
         t["count"] += 1; t["kept"] += 1 if r["tag"] == "kept" else 0
-        if r["p"][2026]: t["total2026"] += r["p"][2026]
+        if r["p"][2026]: t["totalSalary"] += r["p"][2026]
     return teams
 
 def keeper_snapshot_payload(records, built_at, season_from):
@@ -659,10 +659,10 @@ def build():
     records, teams, live = draft_records, team_meta(draft_records), False
     stale = False; snapshot_at = ""; standings = None
     live_error = live_hint = target = ""
+    keepers_ready = False
     keeper_diag = None
     rosters = None
     reg_over = None; reg_diag = None
-    keepers_ready = False
     if USE_ESPN:
         target = ESPN_URL_OVERRIDE or (
             f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{ESPN_SEASON}"
@@ -688,23 +688,6 @@ def build():
             print(f"  standings: {len(standings['categories'])} categories, "
                   f"{standings['totalMoves']} total moves (${standings['pool']} pool)")
             print(f"  regular-season check: over={reg_over}  {reg_diag}")
-            # keeper deadline: read live from ESPN draftSettings.keeperDeadlineFutureDate each build
-            _ds = (league.get("settings") or {}).get("draftSettings") or {}
-            _kd_ms = _ds.get("keeperDeadlineFutureDate") or 0
-            if _kd_ms:
-                try:
-                    from datetime import datetime as _dt2
-                    from zoneinfo import ZoneInfo as _ZI2
-                    _kd = _dt2.fromtimestamp(_kd_ms / 1000, tz=_ZI2("America/New_York"))
-                    _now_et = _dt2.now(_ZI2("America/New_York"))
-                    keepers_ready = _now_et >= _kd
-                    print(f"  keeper deadline: {_kd.strftime('%-m/%-d/%Y %-I:%M %p ET')} — keepers_ready={keepers_ready}")
-                except Exception as _ke:
-                    keepers_ready = len(rosters) > 0 and (len(rosters) / 16) < 15
-                    print(f"  keeper deadline: parse error ({_ke}) — roster-size fallback, keepers_ready={keepers_ready}")
-            else:
-                keepers_ready = len(rosters) > 0 and (len(rosters) / 16) < 15
-                print(f"  keeper deadline: not in ESPN settings — roster-size fallback ({len(rosters)/16:.1f} avg), keepers_ready={keepers_ready}")
         except Exception as e:
             live_error = f"{type(e).__name__}: {e}"
             if isinstance(e, urllib.error.HTTPError):
@@ -807,14 +790,16 @@ def build():
             standings = apply_standings_lock(standings, _lock)
             print(f"  standings: LOCKED as of {standings.get('lockedAt','')} \u2014 split frozen, payouts track the live pool")
 
-    teams_out = teams if isinstance(teams, list) else sorted(teams.values(), key=lambda x: -x["total2026"])
+    teams_out = teams if isinstance(teams, list) else sorted(teams.values(), key=lambda x: -x["totalSalary"])
     data = {"league": LEAGUE, "season": SEASON, "buyin": BUYIN, "live": live,
             "stale": stale, "snapshot_at": snapshot_at, "standings": standings,
             "built_at": built_at, "live_error": live_error, "live_hint": live_hint,
             "live_target": target, "via_relay": bool(ESPN_URL_OVERRIDE),
             "records": records, "teams": teams_out}
     data["teamById"] = {str(t["espnId"]): t["team"] for t in (teams_out if isinstance(teams_out, list) else list(teams_out)) if t.get("espnId") is not None}
-    data["keepers_ready"] = keepers_ready if live and not stale else False
+    # auto-flip PROJECTION_SEASON to next year once keeper deadline has passed
+    if keepers_ready:
+        PROJECTION_SEASON = SEASON + 1
     # Auto-derive season standings from ESPN's rankCalculatedFinal (populated once playoffs finish).
     season_standings = {}
     if live and not stale:
@@ -862,12 +847,12 @@ def build():
                     data["dupeNames"] = sorted(dupe_keys | pool_dupes)
             # per-team budget inputs: keeper count + committed 2027 salary (kept players)
             tmap = {t["team"]: {"team": t["team"], "owner": t.get("owner", ""),
-                                "espnId": t.get("espnId"), "keeperCount": 0, "keeperSalary2027": 0} for t in teams_out}
+                                "espnId": t.get("espnId"), "keeperCount": 0, "keeperSalaryNext": 0} for t in teams_out}
             for r in records:
                 if r.get("kept") and r["team"] in tmap:
                     tmap[r["team"]]["keeperCount"] += 1
                     s = r["p"].get(2027)
-                    if s: tmap[r["team"]]["keeperSalary2027"] += s
+                    if s: tmap[r["team"]]["keeperSalaryNext"] += s
             teams_budget = sorted(tmap.values(), key=lambda x: x["team"])
             check["teams"] = teams_budget
             data["auctionBakeCheck"] = check
