@@ -35,18 +35,18 @@ jobs:
       - name: Build the board (fetches current ESPN rosters)
         run: python build_board.py
 
-      - name: Persist the standings lock so it can never drift
+      - name: Persist season-end snapshots so they can never drift
         run: |
-          if git status --porcelain | grep -q 'standings_lock_.*\.json'; then
+          NEW=$(git status --porcelain | grep -E 'standings_lock_.*\.json|keeper_snapshot_.*\.json' | wc -l)
+          if [ "$NEW" -gt 0 ]; then
             git config user.name "108-stitches-bot"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add standings_lock_*.json
-            git commit -m "Freeze category standings [skip ci]"
-            git push || echo "push failed; lock is also published to Pages and will retry next build"
+            git add standings_lock_*.json keeper_snapshot_*.json
+            git commit -m "Freeze season-end snapshots [skip ci]"
+            git push || echo "push failed; snapshots also published to Pages and will retry next build"
           else
-            echo "No new standings lock to persist."
+            echo "No new season-end snapshots to persist."
           fi
-
       - name: Stage the site
         run: |
           mkdir -p _site
@@ -56,6 +56,7 @@ jobs:
           cp -r icons _site/icons
           cp auction-players.json _site/ 2>/dev/null || true
           cp standings_lock_*.json _site/ 2>/dev/null || true
+          cp keeper_snapshot_*.json _site/ 2>/dev/null || true
 
       - uses: actions/upload-pages-artifact@v3
         with:
