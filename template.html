@@ -145,6 +145,7 @@
   .pay-screen td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   .pay-screen tr:last-child td{border-bottom:none}
   .pay-screen .pay-tn{font:600 13.5px/1.2 "Oswald",sans-serif}
+  @media(max-width:560px){.pay-screen td.pay-tn{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-screen .pay-owe{white-space:normal}}
   .pay-screen .pay-check{font-size:18px;cursor:default;user-select:none}
   .pay-screen .pay-check.editable{cursor:pointer}
   .pay-screen .pay-check.editable:hover{opacity:.7}
@@ -2374,7 +2375,7 @@ setView(prefs.view==='master'?'master':'team');
       const amtLine = owes ? `<div class="pay-owe">owes $${money(-net)}</div>` : '';
       rows += `<tr><td class="pay-tn">${esc(t.team)}${amtLine}</td><td class="ctr">${efMark}</td><td class="ctr">${eosCel}</td></tr>`;
     });
-    const editBtn = "<button class='pay-edit-btn"+(unlocked?' unlocked':'')+"' data-action='edit'>"+(unlocked?'[Editing]':'[Edit]')+"</button>";
+    const editBtn = "<button class='pay-edit-btn"+(unlocked?' unlocked':'')+"' data-action='edit'>"+(unlocked?'Editing':'Edit')+"</button>";
     const summary = `<div class="pay-summary">Entry fees: ${efTotal-efOut}/${efTotal} paid · End of season: ${eosTotal-eosOut}/${eosTotal} settled</div>`;
     content.innerHTML = `<div class="pay-hdr"><span class="pay-hdr-title">Season ${DATA.season} payments</span>${editBtn}</div>`
       + `<table><thead><tr><th>Team</th><th class="ctr">$${ENTRY_FEE}</th><th class="ctr">EOS</th></tr></thead><tbody>${rows}</tbody></table>${summary}`;
